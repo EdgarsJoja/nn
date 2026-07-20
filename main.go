@@ -51,21 +51,43 @@ type Editor struct {
 	message  string
 	msgTimer int
 
-	running bool
+	running  bool
+	themeIdx int
+}
+
+type Theme struct {
+	Name, Base, Mantle, Surface0, Surface1, Surface2, Text, Subtext0, Blue, Green, Overlay0 string
+}
+
+var themes = []Theme{
+	{"Catppuccin Mocha", "#1e1e2e", "#181825", "#313244", "#45475a", "#585b70", "#cdd6f4", "#a6adc8", "#89b4fa", "#a6e3a1", "#6c7086"},
+	{"Catppuccin Latte", "#eff1f5", "#e6e9ef", "#ccd0da", "#bcc0cc", "#acb0be", "#4c4f69", "#6c6f85", "#1e66f5", "#40a02b", "#9ca0b0"},
+	{"Tokyo Night", "#1a1b26", "#16161e", "#24283b", "#2f3546", "#3b4261", "#c0caf5", "#a9b1d6", "#7aa2f7", "#9ece6a", "#565f89"},
+	{"Tokyo Night Day", "#e1e2e7", "#d4d5db", "#c4c5cd", "#b4b5be", "#a4a5ae", "#3760bf", "#6172b0", "#2e7de9", "#587539", "#848cb5"},
+	{"Dracula", "#282a36", "#21222c", "#343746", "#44475a", "#555879", "#f8f8f2", "#cfcfc2", "#8be9fd", "#50fa7b", "#6272a4"},
+	{"One Dark", "#282c34", "#21252b", "#2c313a", "#353b45", "#3e4451", "#abb2bf", "#828997", "#61afef", "#98c379", "#5c6370"},
+	{"Ayu Light", "#fafafa", "#f0f0f0", "#e6e6e6", "#d9d9d9", "#cccccc", "#5c6166", "#8a9199", "#39bae6", "#86b300", "#abb0b6"},
+	{"Gruvbox Dark", "#282828", "#1d2021", "#32302f", "#3c3836", "#504945", "#ebdbb2", "#a89984", "#458588", "#98971a", "#928374"},
 }
 
 var (
-	colBase     = tcell.GetColor("#1e1e2e")
-	colMantle   = tcell.GetColor("#181825")
-	colSurface0 = tcell.GetColor("#313244")
-	colSurface1 = tcell.GetColor("#45475a")
-	colSurface2 = tcell.GetColor("#585b70")
-	colText     = tcell.GetColor("#cdd6f4")
-	colSubtext0 = tcell.GetColor("#a6adc8")
-	colBlue     = tcell.GetColor("#89b4fa")
-	colGreen    = tcell.GetColor("#a6e3a1")
-	colOverlay0 = tcell.GetColor("#6c7086")
+	colBase, colMantle, colSurface0, colSurface1 tcell.Color
+	colSurface2, colText, colSubtext0             tcell.Color
+	colBlue, colGreen, colOverlay0                tcell.Color
 )
+
+func applyTheme(t Theme) {
+	colBase = tcell.GetColor(t.Base)
+	colMantle = tcell.GetColor(t.Mantle)
+	colSurface0 = tcell.GetColor(t.Surface0)
+	colSurface1 = tcell.GetColor(t.Surface1)
+	colSurface2 = tcell.GetColor(t.Surface2)
+	colText = tcell.GetColor(t.Text)
+	colSubtext0 = tcell.GetColor(t.Subtext0)
+	colBlue = tcell.GetColor(t.Blue)
+	colGreen = tcell.GetColor(t.Green)
+	colOverlay0 = tcell.GetColor(t.Overlay0)
+}
 
 func (e *Editor) Init() {
 	e.app = tview.NewApplication()
@@ -88,6 +110,8 @@ func (e *Editor) Init() {
 	e.sidebarWidth = 28
 	e.sidebarDir = "."
 	e.running = true
+	e.themeIdx = 0
+	applyTheme(themes[e.themeIdx])
 
 	e.makeWidgets()
 	e.refreshDir()
@@ -152,6 +176,16 @@ func (e *Editor) buildLayout() {
 func (e *Editor) msg(text string) {
 	e.message = text
 	e.msgTimer = 80
+}
+
+func (e *Editor) cycleTheme() {
+	e.themeIdx = (e.themeIdx + 1) % len(themes)
+	applyTheme(themes[e.themeIdx])
+	e.editorBox.SetBackgroundColor(colBase)
+	e.sidebar.SetBackgroundColor(colMantle)
+	e.statusBox.SetBackgroundColor(colSurface1)
+	e.inputField.SetFieldBackgroundColor(colSurface0)
+	e.msg("theme: " + themes[e.themeIdx].Name)
 }
 
 func (e *Editor) refreshDir() {
@@ -706,7 +740,7 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		}
 		shortcuts = " ^H " + dot + " dotfiles │ Del delete │ Enter open │ Esc edit "
 	} else {
-		shortcuts = " ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^B files "
+		shortcuts = " ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^B files │ Alt+T theme "
 	}
 
 	right := ""
@@ -785,10 +819,16 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	hasShift := mod&tcell.ModShift != 0
 	hasCtrl := mod&tcell.ModCtrl != 0
 
-	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 && (event.Rune() == 'h' || event.Rune() == 'H') {
-		e.hideDotfiles = !e.hideDotfiles
-		e.refreshDir()
-		return nil
+	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 {
+		switch event.Rune() {
+		case 'h', 'H':
+			e.hideDotfiles = !e.hideDotfiles
+			e.refreshDir()
+			return nil
+		case 't', 'T':
+			e.cycleTheme()
+			return nil
+		}
 	}
 
 	switch key {
@@ -1000,10 +1040,16 @@ func (e *Editor) scrollCursor() {
 }
 
 func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
-	if event.Key() == tcell.KeyRune && event.Modifiers()&tcell.ModAlt != 0 && (event.Rune() == 'h' || event.Rune() == 'H') {
-		e.hideDotfiles = !e.hideDotfiles
-		e.refreshDir()
-		return nil
+	if event.Key() == tcell.KeyRune && event.Modifiers()&tcell.ModAlt != 0 {
+		switch event.Rune() {
+		case 'h', 'H':
+			e.hideDotfiles = !e.hideDotfiles
+			e.refreshDir()
+			return nil
+		case 't', 'T':
+			e.cycleTheme()
+			return nil
+		}
 	}
 
 	switch event.Key() {
