@@ -19,6 +19,15 @@ type Selection struct {
 	Active     bool
 }
 
+type FileTab struct {
+	filename  string
+	buffer    []string
+	cursor    Point
+	offset    Point
+	selection Selection
+	modified  bool
+}
+
 type Editor struct {
 	app   *tview.Application
 	pages *tview.Pages
@@ -51,8 +60,10 @@ type Editor struct {
 	message  string
 	msgTimer int
 
-	running  bool
-	themeIdx int
+	running   bool
+	themeIdx  int
+	openFiles []*FileTab
+	activeTab int
 }
 
 type Theme struct {
@@ -111,6 +122,8 @@ func (e *Editor) Init() {
 	e.sidebarDir = "."
 	e.running = true
 	e.themeIdx = 0
+	e.activeTab = 0
+	e.openFiles = []*FileTab{{buffer: []string{""}}}
 	applyTheme(themes[e.themeIdx])
 
 	e.makeWidgets()
@@ -260,21 +273,51 @@ func (e *Editor) maxLineNumW() int {
 }
 
 func (e *Editor) loadFile(path string) {
+	// Check if already open
+	for i, tab := range e.openFiles {
+		if tab.filename == path {
+			e.saveCurrentTab()
+			e.restoreTab(i)
+			e.msg("switched to " + filepath.Base(path))
+			return
+		}
+	}
+
+	// Reuse the initial empty tab if it's the only one and untouched
+	if len(e.openFiles) == 1 && e.openFiles[0].filename == "" && len(e.openFiles[0].buffer) == 1 && e.openFiles[0].buffer[0] == "" {
+		tab := e.openFiles[0]
+		data, err := os.ReadFile(path)
+		if err != nil {
+			e.msg("error: " + err.Error())
+			return
+		}
+		tab.buffer = strings.Split(string(data), "\n")
+		if len(tab.buffer) == 0 {
+			tab.buffer = []string{""}
+		}
+		tab.filename = path
+		e.restoreTab(0)
+		e.msg("opened " + filepath.Base(path))
+		return
+	}
+
+	// Open in new tab
 	data, err := os.ReadFile(path)
 	if err != nil {
 		e.msg("error: " + err.Error())
 		return
 	}
+	e.saveCurrentTab()
 	content := string(data)
-	e.buffer = strings.Split(content, "\n")
-	if len(e.buffer) == 0 {
-		e.buffer = []string{""}
+	buf := strings.Split(content, "\n")
+	if len(buf) == 0 {
+		buf = []string{""}
 	}
-	e.filename = path
-	e.cursor = Point{}
-	e.offset = Point{}
-	e.modified = false
-	e.selection = Selection{}
+	e.openFiles = append(e.openFiles, &FileTab{
+		filename: path,
+		buffer:   buf,
+	})
+	e.restoreTab(len(e.openFiles) - 1)
 	e.msg("opened " + filepath.Base(path))
 }
 
@@ -286,6 +329,7 @@ func (e *Editor) saveFile(path string) {
 	}
 	e.filename = path
 	e.modified = false
+	e.saveCurrentTab()
 	e.msg("saved " + filepath.Base(path))
 }
 
@@ -323,12 +367,12 @@ func (e *Editor) submitInput() {
 	case "open":
 		e.loadFile(val)
 	case "new":
-		e.buffer = []string{""}
-		e.cursor = Point{}
-		e.offset = Point{}
-		e.filename = val
-		e.modified = false
-		e.selection = Selection{}
+		e.saveCurrentTab()
+		e.openFiles = append(e.openFiles, &FileTab{
+			filename: val,
+			buffer:   []string{""},
+		})
+		e.restoreTab(len(e.openFiles) - 1)
 		e.refreshDir()
 		e.msg("new file: " + val)
 	}
@@ -381,6 +425,75 @@ func (e *Editor) sidebarEnterDir() {
 	e.onSidebarSelectItem(e.sidebarIdx)
 }
 
+func (e *Editor) saveCurrentTab() {
+	if e.activeTab < len(e.openFiles) {
+		e.openFiles[e.activeTab].buffer = e.buffer
+		e.openFiles[e.activeTab].cursor = e.cursor
+		e.openFiles[e.activeTab].offset = e.offset
+		e.openFiles[e.activeTab].selection = e.selection
+		e.openFiles[e.activeTab].filename = e.filename
+		e.openFiles[e.activeTab].modified = e.modified
+	}
+}
+
+func (e *Editor) restoreTab(idx int) {
+	if idx < 0 || idx >= len(e.openFiles) {
+		return
+	}
+	t := e.openFiles[idx]
+	e.buffer = t.buffer
+	e.cursor = t.cursor
+	e.offset = t.offset
+	e.selection = t.selection
+	e.filename = t.filename
+	e.modified = t.modified
+	e.activeTab = idx
+}
+
+func (e *Editor) switchTab(dir int) {
+	if len(e.openFiles) < 2 {
+		return
+	}
+	e.saveCurrentTab()
+	next := (e.activeTab + dir) % len(e.openFiles)
+	if next < 0 {
+		next = len(e.openFiles) - 1
+	}
+	e.restoreTab(next)
+	e.msg("tab: " + filepath.Base(e.openFiles[next].filename))
+}
+
+func (e *Editor) closeTab() {
+	if len(e.openFiles) <= 1 {
+		e.buffer = []string{""}
+		e.cursor = Point{}
+		e.offset = Point{}
+		e.filename = ""
+		e.modified = false
+		e.selection = Selection{}
+		e.openFiles[0].buffer = []string{""}
+		e.openFiles[0].filename = ""
+		e.openFiles[0].modified = false
+		e.msg("closed tab")
+		return
+	}
+	e.saveCurrentTab()
+	idx := e.activeTab
+	e.openFiles = append(e.openFiles[:idx], e.openFiles[idx+1:]...)
+	if e.activeTab >= len(e.openFiles) {
+		e.activeTab = len(e.openFiles) - 1
+	}
+	e.restoreTab(e.activeTab)
+	e.msg("closed tab")
+}
+
+func (e *Editor) setModified() {
+	e.modified = true
+	if e.activeTab < len(e.openFiles) {
+		e.openFiles[e.activeTab].modified = true
+	}
+}
+
 func (e *Editor) selectedText() string {
 	if !e.selection.Active {
 		return ""
@@ -424,7 +537,7 @@ func (e *Editor) deleteSelection() {
 	}
 	e.cursor = start
 	e.selection = Selection{}
-	e.modified = true
+	e.setModified()
 }
 
 func (e *Editor) insertText(text string) {
@@ -447,7 +560,7 @@ func (e *Editor) insertText(text string) {
 			e.cursor.X++
 		}
 	}
-	e.modified = true
+	e.setModified()
 }
 
 func (e *Editor) copySel() {
@@ -481,14 +594,14 @@ func (e *Editor) deleteBackward() {
 		line := e.buffer[e.cursor.Y]
 		e.buffer[e.cursor.Y] = line[:e.cursor.X-1] + line[e.cursor.X:]
 		e.cursor.X--
-		e.modified = true
+		e.setModified()
 	} else if e.cursor.Y > 0 {
 		prev := len(e.buffer[e.cursor.Y-1])
 		e.buffer[e.cursor.Y-1] += e.buffer[e.cursor.Y]
 		e.buffer = append(e.buffer[:e.cursor.Y], e.buffer[e.cursor.Y+1:]...)
 		e.cursor.Y--
 		e.cursor.X = prev
-		e.modified = true
+		e.setModified()
 	}
 }
 
@@ -500,11 +613,11 @@ func (e *Editor) deleteForward() {
 	line := e.buffer[e.cursor.Y]
 	if e.cursor.X < len(line) {
 		e.buffer[e.cursor.Y] = line[:e.cursor.X] + line[e.cursor.X+1:]
-		e.modified = true
+		e.setModified()
 	} else if e.cursor.Y < len(e.buffer)-1 {
 		e.buffer[e.cursor.Y] += e.buffer[e.cursor.Y+1]
 		e.buffer = append(e.buffer[:e.cursor.Y+1], e.buffer[e.cursor.Y+2:]...)
-		e.modified = true
+		e.setModified()
 	}
 }
 
@@ -512,7 +625,7 @@ func (e *Editor) deleteLine() {
 	if len(e.buffer) == 1 {
 		e.buffer[0] = ""
 		e.cursor.X = 0
-		e.modified = true
+		e.setModified()
 		e.selection = Selection{}
 		return
 	}
@@ -523,7 +636,7 @@ func (e *Editor) deleteLine() {
 	}
 	e.cursor.X = 0
 	e.cursorInBounds()
-	e.modified = true
+	e.setModified()
 	e.selection = Selection{}
 }
 
@@ -537,7 +650,7 @@ func (e *Editor) duplicateLine() {
 	e.buffer[e.cursor.Y+1] = dup
 	e.cursor.Y++
 	e.cursor.X = 0
-	e.modified = true
+	e.setModified()
 	e.selection = Selection{}
 }
 
@@ -650,7 +763,6 @@ func (e *Editor) drawSidebar(screen tcell.Screen, x, y, width, height int) (int,
 
 func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
 	sw := 0
-
 	editX := x
 	if e.showSidebar {
 		sw = e.sidebarWidth
@@ -658,12 +770,50 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 	}
 	editW := width - (editX - x)
 
+	// Tab bar
+	tabH := 1
+	for dx := 0; dx < width; dx++ {
+		screen.SetContent(x+dx, y, ' ', nil, tcell.StyleDefault.Background(colSurface0))
+	}
+	tabsX := x
+	for i, t := range e.openFiles {
+		label := filepath.Base(t.filename)
+		if t.filename == "" {
+			label = "untitled"
+		}
+		if t.modified {
+			label += " •"
+		}
+		seg := " " + label + " "
+		segRunes := []rune(seg)
+		if tabsX+len(segRunes) > x+width {
+			break
+		}
+		bg := colSurface0
+		fg := colSubtext0
+		if i == e.activeTab {
+			bg = colBlue
+			fg = colBase
+		}
+		for d, r := range segRunes {
+			screen.SetContent(tabsX+d, y, r, nil, tcell.StyleDefault.Background(bg).Foreground(fg))
+		}
+		tabsX += len(segRunes)
+		if tabsX < x+width {
+			screen.SetContent(tabsX, y, ' ', nil, tcell.StyleDefault.Background(bg))
+			tabsX++
+		}
+	}
+
+	contentY := y + tabH
+	contentH := height - tabH
+
 	lnW := e.maxLineNumW()
 	gutterW := lnW + 2
 
-	for dy := 0; dy < height; dy++ {
+	for dy := 0; dy < contentH; dy++ {
 		by := dy + e.offset.Y
-		screenY := y + dy
+		screenY := contentY + dy
 
 		if by >= len(e.buffer) {
 			break
@@ -701,7 +851,7 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 	// Draw cursor
 	if e.mode == "editor" {
 		cx := editX + gutterW + e.cursor.X - e.offset.X
-		cy := y + e.cursor.Y - e.offset.Y
+		cy := contentY + e.cursor.Y - e.offset.Y
 		if cx >= editX && cx < editX+editW && cy >= y && cy < y+height {
 			screen.ShowCursor(cx, cy)
 		}
@@ -720,7 +870,7 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		screen.SetContent(cx, statusY, ' ', nil, tcell.StyleDefault.Background(colSurface1))
 	}
 
-	modeTag := " NORMAL "
+	modeTag := " EDITOR "
 	modeBg := colSurface1
 	modeFg := colText
 	if e.mode == "sidebar" {
@@ -738,18 +888,12 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		if e.hideDotfiles {
 			dot = "show"
 		}
-		shortcuts = " ^R " + dot + " dotfiles │ ← up │ → enter │ Del delete │ Esc edit "
+		shortcuts = " ^R " + dot + " dotfiles │ ← up │ → enter │ Del delete │ Esc edit │ Alt←→ tab "
 	} else {
-		shortcuts = " ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^R refresh │ ^B files │ Alt+T theme "
+		shortcuts = " ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^W close │ Alt←→ tab │ Alt+T theme "
 	}
 
-	right := ""
-	if e.msgTimer > 0 && e.message != "" {
-		right = " " + e.message + " "
-		e.msgTimer--
-	} else {
-		right = fmt.Sprintf(" %d:%d ", e.cursor.Y+1, e.cursor.X+1)
-	}
+	right := fmt.Sprintf(" %d:%d ", e.cursor.Y+1, e.cursor.X+1)
 
 	modeEnd := len(modeTag)
 	nameX := modeEnd + 2
@@ -794,22 +938,26 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		}
 	}
 
-	if e.msgTimer > -1 && e.message != "" {
-		for cx, ch := range right {
-			sx := (w - rightW) + cx
-			if sx >= w {
-				break
-			}
-			screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colGreen).Foreground(colBase))
+	// Line:col on far right
+	for cx, ch := range right {
+		sx := (w - rightW) + cx
+		if sx >= w {
+			break
 		}
-	} else {
-		for cx, ch := range right {
-			sx := (w - rightW) + cx
-			if sx >= w {
-				break
+		screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colSubtext0))
+	}
+
+	// Message left of line:col (green bg)
+	if e.msgTimer > 0 && e.message != "" {
+		msg := " " + e.message + " "
+		msgX := (w - rightW) - len(msg)
+		if msgX >= 0 {
+			for cx, ch := range msg {
+				sx := msgX + cx
+				screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colGreen).Foreground(colBase))
 			}
-			screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colSubtext0))
 		}
+		e.msgTimer--
 	}
 }
 
@@ -818,6 +966,7 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	mod := event.Modifiers()
 	hasShift := mod&tcell.ModShift != 0
 	hasCtrl := mod&tcell.ModCtrl != 0
+	hasAlt := mod&tcell.ModAlt != 0
 
 	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 && (event.Rune() == 't' || event.Rune() == 'T') {
 		e.cycleTheme()
@@ -847,6 +996,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyCtrlD:
 		e.duplicateLine()
+		return nil
+	case tcell.KeyCtrlW:
+		e.closeTab()
 		return nil
 	case tcell.KeyCtrlR:
 		e.hideDotfiles = !e.hideDotfiles
@@ -895,7 +1047,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 			e.selection.End = e.cursor
 		}
 	case tcell.KeyLeft:
-		if hasCtrl {
+		if hasAlt {
+			e.switchTab(-1)
+		} else if hasCtrl {
 			if !hasShift && e.selection.Active {
 				e.selection = Selection{}
 			}
@@ -929,7 +1083,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 			}
 		}
 	case tcell.KeyRight:
-		if hasCtrl {
+		if hasAlt {
+			e.switchTab(1)
+		} else if hasCtrl {
 			if !hasShift && e.selection.Active {
 				e.selection = Selection{}
 			}
@@ -978,12 +1134,12 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 	case tcell.KeyPgUp:
 		_, _, _, height := e.editorBox.GetRect()
-		e.cursor.Y -= height
+		e.cursor.Y -= height - 1
 		e.cursorInBounds()
 		e.selection = Selection{}
 	case tcell.KeyPgDn:
 		_, _, _, height := e.editorBox.GetRect()
-		e.cursor.Y += height
+		e.cursor.Y += height - 1
 		e.cursorInBounds()
 		e.selection = Selection{}
 	case tcell.KeyEnter:
@@ -1025,8 +1181,9 @@ func (e *Editor) scrollCursor() {
 	if e.cursor.Y < e.offset.Y {
 		e.offset.Y = e.cursor.Y
 	}
-	if e.cursor.Y >= e.offset.Y+height {
-		e.offset.Y = e.cursor.Y - height + 1
+	ch := height - 1
+	if e.cursor.Y >= e.offset.Y+ch {
+		e.offset.Y = e.cursor.Y - ch + 1
 	}
 	if e.cursor.X < e.offset.X {
 		e.offset.X = e.cursor.X
@@ -1052,17 +1209,25 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 			e.sidebarIdx++
 		}
 	case tcell.KeyLeft:
-		absDir, _ := filepath.Abs(e.sidebarDir)
-		parent := filepath.Dir(absDir)
-		if parent != absDir {
-			e.sidebarDir = parent
-			e.sidebarIdx = 0
-			e.sidebarOff = 0
-			e.refreshDir()
+		if event.Modifiers()&tcell.ModAlt != 0 {
+			e.switchTab(-1)
+		} else {
+			absDir, _ := filepath.Abs(e.sidebarDir)
+			parent := filepath.Dir(absDir)
+			if parent != absDir {
+				e.sidebarDir = parent
+				e.sidebarIdx = 0
+				e.sidebarOff = 0
+				e.refreshDir()
+			}
 		}
 		return nil
 	case tcell.KeyRight:
-		e.sidebarEnterDir()
+		if event.Modifiers()&tcell.ModAlt != 0 {
+			e.switchTab(1)
+		} else {
+			e.sidebarEnterDir()
+		}
 		return nil
 	case tcell.KeyHome:
 		e.sidebarIdx = 0
