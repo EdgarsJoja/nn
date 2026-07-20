@@ -738,9 +738,9 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		if e.hideDotfiles {
 			dot = "show"
 		}
-		shortcuts = " ^H " + dot + " dotfiles │ Del delete │ Enter open │ Esc edit "
+		shortcuts = " ^R " + dot + " dotfiles │ ← up │ → enter │ Del delete │ Esc edit "
 	} else {
-		shortcuts = " ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^B files │ Alt+T theme "
+		shortcuts = " ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^R refresh │ ^B files │ Alt+T theme "
 	}
 
 	right := ""
@@ -819,16 +819,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	hasShift := mod&tcell.ModShift != 0
 	hasCtrl := mod&tcell.ModCtrl != 0
 
-	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 {
-		switch event.Rune() {
-		case 'h', 'H':
-			e.hideDotfiles = !e.hideDotfiles
-			e.refreshDir()
-			return nil
-		case 't', 'T':
-			e.cycleTheme()
-			return nil
-		}
+	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 && (event.Rune() == 't' || event.Rune() == 'T') {
+		e.cycleTheme()
+		return nil
 	}
 
 	switch key {
@@ -854,6 +847,10 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyCtrlD:
 		e.duplicateLine()
+		return nil
+	case tcell.KeyCtrlR:
+		e.hideDotfiles = !e.hideDotfiles
+		e.refreshDir()
 		return nil
 	case tcell.KeyCtrlQ:
 		e.app.Stop()
@@ -1040,16 +1037,9 @@ func (e *Editor) scrollCursor() {
 }
 
 func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
-	if event.Key() == tcell.KeyRune && event.Modifiers()&tcell.ModAlt != 0 {
-		switch event.Rune() {
-		case 'h', 'H':
-			e.hideDotfiles = !e.hideDotfiles
-			e.refreshDir()
-			return nil
-		case 't', 'T':
-			e.cycleTheme()
-			return nil
-		}
+	if event.Key() == tcell.KeyRune && event.Modifiers()&tcell.ModAlt != 0 && (event.Rune() == 't' || event.Rune() == 'T') {
+		e.cycleTheme()
+		return nil
 	}
 
 	switch event.Key() {
@@ -1061,19 +1051,44 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 		if e.sidebarIdx < len(e.sidebarFiles)-1 {
 			e.sidebarIdx++
 		}
+	case tcell.KeyLeft:
+		absDir, _ := filepath.Abs(e.sidebarDir)
+		parent := filepath.Dir(absDir)
+		if parent != absDir {
+			e.sidebarDir = parent
+			e.sidebarIdx = 0
+			e.sidebarOff = 0
+			e.refreshDir()
+		}
+		return nil
+	case tcell.KeyRight:
+		e.sidebarEnterDir()
+		return nil
 	case tcell.KeyHome:
 		e.sidebarIdx = 0
 	case tcell.KeyEnd:
 		e.sidebarIdx = len(e.sidebarFiles) - 1
+	case tcell.KeyPgUp:
+		rows := e.getSidebarHeight()
+		e.sidebarIdx -= rows
+		if e.sidebarIdx < 0 {
+			e.sidebarIdx = 0
+		}
+	case tcell.KeyPgDn:
+		rows := e.getSidebarHeight()
+		e.sidebarIdx += rows
+		if e.sidebarIdx >= len(e.sidebarFiles) {
+			e.sidebarIdx = len(e.sidebarFiles) - 1
+		}
 	case tcell.KeyEnter:
 		e.sidebarEnterDir()
 		return nil
-	case tcell.KeyDelete:
-		e.deleteSidebarFile()
-		return nil
-	case tcell.KeyCtrlH:
+	case tcell.KeyCtrlR:
 		e.hideDotfiles = !e.hideDotfiles
 		e.refreshDir()
+		return nil
+	case tcell.KeyDelete:
+		e.deleteSidebarFile()
 		return nil
 	case tcell.KeyEscape:
 		e.mode = "editor"
