@@ -310,15 +310,6 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 	}
 
 	shortcuts := ""
-	if e.mode == "sidebar" {
-		dot := "hide"
-		if e.hideDotfiles {
-			dot = "show"
-		}
-		shortcuts = " ^F filter │ ^R " + dot + " dotfiles │ <- up │ -> enter │ Del delete │ Esc edit │ Alt+<> tab "
-	} else {
-		shortcuts = " ^F search │ ^Z undo │ ^Y redo │ ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^W close │ Alt+<> tab │ Sh+Alt+<> resize │ Alt+T theme "
-	}
 
 	branchTag := ""
 	if e.git != nil && e.git.branch != "" {
@@ -327,7 +318,7 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 	right := branchTag + fmt.Sprintf("%d/%d  %d:%d ", e.cursor.Y+1, max(1, len(e.buffer)), e.cursor.Y+1, e.cursor.X+1)
 
 	modeEnd := len(modeTag)
-	nameX := modeEnd + 2
+	nameX := modeEnd + 1
 
 	name := "[No Name]"
 	if e.filename != "" {
@@ -349,7 +340,7 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 			}
 			screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colText))
 		}
-		shortcutsX = nameX + len(name) + 1
+		shortcutsX = nameX + len(name)
 	}
 
 	maxShortcutW := (w - rightW) - shortcutsX - len(" F1 help ")
@@ -363,6 +354,22 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 			st = tcell.StyleDefault.Background(colSurface1).Foreground(colOverlay0)
 		}
 		screen.SetContent(sx, statusY, ch, nil, st)
+	}
+
+	if e.msgTimer > 0 && e.message != "" {
+		msg := " " + e.message + " "
+		msgStart := shortcutsX + 1
+		msgEnd := (w - rightW) - len(" F1 help ")
+		if msgStart < msgEnd {
+			for cx, ch := range msg {
+				sx := msgStart + cx
+				if sx >= msgEnd {
+					break
+				}
+				screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colGreen).Foreground(colBase))
+			}
+		}
+		e.msgTimer--
 	}
 
 	helpHint := " F1 help "
@@ -382,18 +389,6 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 			break
 		}
 		screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colSubtext0))
-	}
-
-	if e.msgTimer > 0 && e.message != "" {
-		msg := " " + e.message + " "
-		msgX := (w - rightW) - len(msg)
-		if msgX >= 0 {
-			for cx, ch := range msg {
-				sx := msgX + cx
-				screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colGreen).Foreground(colBase))
-			}
-		}
-		e.msgTimer--
 	}
 }
 

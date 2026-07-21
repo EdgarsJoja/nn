@@ -96,6 +96,7 @@ func (e *Editor) submitInput() {
 	switch e.inputMode {
 	case "save":
 		e.saveFile(val)
+		e.refreshDir()
 	case "open":
 		e.loadFile(val)
 	case "new":
@@ -153,6 +154,7 @@ func (e *Editor) cmdSave() {
 	}
 	e.saveFile(e.filename)
 	e.refreshGit()
+	e.refreshDir()
 }
 
 func (e *Editor) cmdOpen()   { e.showInput("open", "open: ") }
