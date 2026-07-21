@@ -53,6 +53,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		e.app.Stop()
 		e.running = false
 		return nil
+	case tcell.KeyCtrlF:
+		e.cmdSearch()
+		return nil
 	case tcell.KeyCtrlB:
 		if !e.showSidebar {
 			e.showSidebar = true
@@ -273,6 +276,14 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 		e.deleteSidebarFile()
 		return nil
 	case tcell.KeyEscape:
+		if e.sidebarFilter != "" {
+			e.sidebarFilter = ""
+			e.sidebarFiles = e.sidebarAllFiles
+			if e.sidebarIdx >= len(e.sidebarFiles) {
+				e.sidebarIdx = 0
+			}
+			return nil
+		}
 		e.mode = "editor"
 		e.app.SetFocus(e.editorBox)
 		return nil
@@ -289,6 +300,9 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlQ:
 		e.app.Stop()
 		e.running = false
+		return nil
+	case tcell.KeyCtrlF:
+		e.showInput("filesearch", "filter: ")
 		return nil
 	case tcell.KeyCtrlS:
 		if e.filename == "" {

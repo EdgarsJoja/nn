@@ -36,6 +36,8 @@ type Editor struct {
 	showSidebar  bool
 	sidebarWidth int
 	hideDotfiles bool
+	sidebarFilter string
+	sidebarAllFiles []string
 
 	mode      string
 	inputMode string
@@ -47,6 +49,10 @@ type Editor struct {
 	themeIdx  int
 	openFiles []*FileTab
 	activeTab int
+
+	searchQuery   string
+	searchMatches []Point
+	searchIdx     int
 }
 
 func (e *Editor) msg(text string) {
@@ -58,13 +64,15 @@ func (e *Editor) showInput(mode, prompt string) {
 	e.inputMode = mode
 	e.inputField.SetLabel(prompt)
 	e.inputField.SetText("")
-	e.pages.SwitchToPage("input")
+	e.mainFlex.RemoveItem(e.statusBox)
+	e.mainFlex.AddItem(e.inputField, 1, 0, true)
 	e.app.SetFocus(e.inputField)
 }
 
 func (e *Editor) submitInput() {
 	val := e.inputField.GetText()
-	e.pages.SwitchToPage("main")
+	e.mainFlex.RemoveItem(e.inputField)
+	e.mainFlex.AddItem(e.statusBox, 1, 0, false)
 	if e.mode == "sidebar" {
 		e.app.SetFocus(e.sidebar)
 	} else {
@@ -90,8 +98,21 @@ func (e *Editor) submitInput() {
 }
 
 func (e *Editor) cancelInput() {
+	switch e.inputMode {
+	case "search":
+		e.searchQuery = ""
+		e.searchMatches = nil
+		e.searchIdx = 0
+	case "filesearch":
+		e.sidebarFilter = ""
+		e.sidebarFiles = e.sidebarAllFiles
+		if e.sidebarIdx >= len(e.sidebarFiles) {
+			e.sidebarIdx = 0
+		}
+	}
 	e.inputMode = ""
-	e.pages.SwitchToPage("main")
+	e.mainFlex.RemoveItem(e.inputField)
+	e.mainFlex.AddItem(e.statusBox, 1, 0, false)
 	if e.mode == "sidebar" {
 		e.app.SetFocus(e.sidebar)
 	} else {
@@ -107,8 +128,82 @@ func (e *Editor) cmdSave() {
 	e.saveFile(e.filename)
 }
 
-func (e *Editor) cmdOpen()  { e.showInput("open", "open: ") }
-func (e *Editor) cmdNew()   { e.showInput("new", "new file: ") }
+func (e *Editor) cmdOpen()   { e.showInput("open", "open: ") }
+func (e *Editor) cmdNew()    { e.showInput("new", "new file: ") }
+func (e *Editor) cmdSearch() { e.showInput("search", "search: ") }
+
+func (e *Editor) updateSearch(query string) {
+	e.searchQuery = query
+	e.searchMatches = e.findMatches(query)
+	if len(e.searchMatches) > 0 {
+		e.searchIdx = 0
+		e.cursor = e.searchMatches[0]
+		e.cursorInBounds()
+		e.scrollCursor()
+	} else {
+		e.searchIdx = 0
+	}
+}
+
+func (e *Editor) searchPrev() {
+	if len(e.searchMatches) == 0 {
+		return
+	}
+	e.searchIdx = (e.searchIdx - 1 + len(e.searchMatches)) % len(e.searchMatches)
+	e.cursor = e.searchMatches[e.searchIdx]
+	e.cursorInBounds()
+	e.scrollCursor()
+}
+
+func (e *Editor) searchNext() {
+	if len(e.searchMatches) == 0 {
+		return
+	}
+	e.searchIdx = (e.searchIdx + 1) % len(e.searchMatches)
+	e.cursor = e.searchMatches[e.searchIdx]
+	e.cursorInBounds()
+	e.scrollCursor()
+}
+
+func (e *Editor) updateFileFilter(query string) {
+	e.sidebarFilter = query
+	if query == "" {
+		e.sidebarFiles = e.sidebarAllFiles
+	} else {
+		lower := strings.ToLower(query)
+		e.sidebarFiles = nil
+		for _, f := range e.sidebarAllFiles {
+			if strings.Contains(strings.ToLower(f), lower) {
+				e.sidebarFiles = append(e.sidebarFiles, f)
+			}
+		}
+	}
+	if e.sidebarIdx >= len(e.sidebarFiles) {
+		e.sidebarIdx = 0
+	}
+	e.sidebarOff = 0
+}
+
+func (e *Editor) findMatches(query string) []Point {
+	if query == "" {
+		return nil
+	}
+	var matches []Point
+	lower := strings.ToLower(query)
+	for y, line := range e.buffer {
+		lowerLine := strings.ToLower(line)
+		start := 0
+		for {
+			idx := strings.Index(lowerLine[start:], lower)
+			if idx == -1 {
+				break
+			}
+			matches = append(matches, Point{X: start + idx, Y: y})
+			start += idx + 1
+		}
+	}
+	return matches
+}
 
 func (e *Editor) refreshDir() {
 	entries, err := os.ReadDir(e.sidebarDir)
@@ -116,7 +211,7 @@ func (e *Editor) refreshDir() {
 		e.msg("error: " + err.Error())
 		return
 	}
-	e.sidebarFiles = nil
+	e.sidebarAllFiles = nil
 	var dirs, files []string
 	for _, entry := range entries {
 		name := entry.Name()
@@ -131,9 +226,14 @@ func (e *Editor) refreshDir() {
 	}
 	sort.Strings(dirs)
 	sort.Strings(files)
-	e.sidebarFiles = append(e.sidebarFiles, "../")
-	e.sidebarFiles = append(e.sidebarFiles, dirs...)
-	e.sidebarFiles = append(e.sidebarFiles, files...)
+	e.sidebarAllFiles = append(e.sidebarAllFiles, "../")
+	e.sidebarAllFiles = append(e.sidebarAllFiles, dirs...)
+	e.sidebarAllFiles = append(e.sidebarAllFiles, files...)
+	if e.sidebarFilter != "" {
+		e.updateFileFilter(e.sidebarFilter)
+	} else {
+		e.sidebarFiles = e.sidebarAllFiles
+	}
 	if e.sidebarIdx >= len(e.sidebarFiles) {
 		e.sidebarIdx = 0
 	}
@@ -192,8 +292,14 @@ func (e *Editor) getSidebarHeight() int {
 }
 
 func (e *Editor) rebuildSidebarVisibility() {
+	inputWasActive := e.inputMode != ""
 	e.pages.RemovePage("main")
 	e.buildLayout()
+	if inputWasActive {
+		e.mainFlex.RemoveItem(e.statusBox)
+		e.mainFlex.AddItem(e.inputField, 1, 0, true)
+		e.app.SetFocus(e.inputField)
+	}
 	e.pages.SendToFront("main")
 }
 
@@ -284,11 +390,65 @@ func (e *Editor) makeWidgets() {
 	e.inputField.SetLabelColor(colGreen)
 	e.inputField.SetFieldBackgroundColor(colSurface0)
 	e.inputField.SetFieldTextColor(colText)
+	e.inputField.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if e.inputMode == "filesearch" {
+			switch event.Key() {
+			case tcell.KeyUp, tcell.KeyDown, tcell.KeyPgUp, tcell.KeyPgDn, tcell.KeyHome, tcell.KeyEnd:
+				e.handleSidebarKey(event)
+				return nil
+			case tcell.KeyEnter:
+				e.onSidebarSelectItem(e.sidebarIdx)
+				e.sidebarFilter = ""
+				e.sidebarFiles = e.sidebarAllFiles
+				e.mainFlex.RemoveItem(e.inputField)
+				e.mainFlex.AddItem(e.statusBox, 1, 0, false)
+				e.inputMode = ""
+				if e.mode == "editor" {
+					e.app.SetFocus(e.editorBox)
+				} else {
+					e.app.SetFocus(e.sidebar)
+				}
+				return nil
+			case tcell.KeyEscape:
+				e.cancelInput()
+				return nil
+			}
+		}
+		return event
+	})
 	e.inputField.SetDoneFunc(func(key tcell.Key) {
-		if key == tcell.KeyEnter {
-			e.submitInput()
-		} else if key == tcell.KeyEscape {
+		switch e.inputMode {
+	case "search":
+		switch key {
+		case tcell.KeyTab:
+			e.searchNext()
+		case tcell.KeyBacktab:
+			e.searchPrev()
+		case tcell.KeyEnter:
+			e.searchQuery = ""
+			e.searchMatches = nil
+			e.searchIdx = 0
+			e.mainFlex.RemoveItem(e.inputField)
+			e.mainFlex.AddItem(e.statusBox, 1, 0, false)
+			e.inputMode = ""
+			e.app.SetFocus(e.editorBox)
+		case tcell.KeyEscape:
 			e.cancelInput()
+		}
+		default:
+			if key == tcell.KeyEnter {
+				e.submitInput()
+			} else if key == tcell.KeyEscape {
+				e.cancelInput()
+			}
+		}
+	})
+	e.inputField.SetChangedFunc(func(text string) {
+		switch e.inputMode {
+		case "search":
+			e.updateSearch(text)
+		case "filesearch":
+			e.updateFileFilter(text)
 		}
 	})
 
@@ -306,17 +466,7 @@ func (e *Editor) buildLayout() {
 	e.mainFlex.AddItem(content, 0, 1, true)
 	e.mainFlex.AddItem(e.statusBox, 1, 0, false)
 
-	inputFlex := tview.NewFlex().SetDirection(tview.FlexRow)
-	inputFlex.AddItem(nil, 0, 1, false)
-	inputRow := tview.NewFlex().SetDirection(tview.FlexColumn)
-	inputRow.AddItem(nil, 0, 1, false)
-	inputRow.AddItem(e.inputField, 50, 0, true)
-	inputRow.AddItem(nil, 0, 1, false)
-	inputFlex.AddItem(inputRow, 1, 0, true)
-	inputFlex.AddItem(nil, 0, 1, false)
-
 	e.pages.AddPage("main", e.mainFlex, true, true)
-	e.pages.AddPage("input", inputFlex, true, false)
 }
 
 func (e *Editor) Run() error {

@@ -119,12 +119,29 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 
 		line := []rune(e.buffer[by])
 		textStart := editX + gutterW
+		searchQlen := len([]rune(e.searchQuery))
 		for dx := 0; dx < editW-gutterW && dx+e.offset.X < len(line); dx++ {
 			ch := line[dx+e.offset.X]
 			fg := e.tokenColorAt(by, dx+e.offset.X)
 			st := tcell.StyleDefault.Background(colBase).Foreground(fg)
 			if e.selection.Active && e.inSelection(Point{X: dx + e.offset.X, Y: by}) {
 				st = tcell.StyleDefault.Background(colSurface1).Foreground(fg)
+			}
+			if searchQlen > 0 {
+				for mi, m := range e.searchMatches {
+					if m.Y > by {
+						break
+					}
+					if m.Y == by && dx+e.offset.X >= m.X && dx+e.offset.X < m.X+searchQlen {
+						bg := colSurface2
+						if mi == e.searchIdx {
+							bg = colKeyword
+							fg = colBase
+						}
+						st = st.Background(bg).Foreground(fg)
+						break
+					}
+				}
 			}
 			screen.SetContent(textStart+dx, screenY, ch, nil, st)
 		}
@@ -175,9 +192,9 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		if e.hideDotfiles {
 			dot = "show"
 		}
-		shortcuts = " ^R " + dot + " dotfiles │ ← up │ → enter │ Del delete │ Esc edit │ Alt←→ tab "
+		shortcuts = " ^F filter │ ^R " + dot + " dotfiles │ ← up │ → enter │ Del delete │ Esc edit │ Alt←→ tab "
 	} else {
-		shortcuts = " ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^W close │ Alt←→ tab │ Alt+T theme "
+		shortcuts = " ^F search │ ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^W close │ Alt←→ tab │ Alt+T theme "
 	}
 
 	right := fmt.Sprintf(" %d:%d ", e.cursor.Y+1, e.cursor.X+1)
