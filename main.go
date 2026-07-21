@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -65,6 +66,7 @@ type Editor struct {
 	lastOp    int
 
 	pendingDelPath string
+	git           *gitInfo
 }
 
 func (e *Editor) msg(text string) {
@@ -150,6 +152,7 @@ func (e *Editor) cmdSave() {
 		return
 	}
 	e.saveFile(e.filename)
+	e.refreshGit()
 }
 
 func (e *Editor) cmdOpen()   { e.showInput("open", "open: ") }
@@ -514,6 +517,7 @@ func (e *Editor) Init() {
 	e.buildLayout()
 	e.app.SetRoot(e.pages, true)
 	e.app.SetFocus(e.editorBox)
+	e.refreshGit()
 }
 
 func (e *Editor) makeWidgets() {
@@ -667,6 +671,18 @@ func (e *Editor) Run() error {
 		e.drawStatusBar(screen)
 		return x, y, width, height
 	})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if !e.running {
+				return
+			}
+			e.app.QueueUpdateDraw(func() {
+				e.refreshGit()
+			})
+		}
+	}()
 	return e.app.Run()
 }
 

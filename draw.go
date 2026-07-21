@@ -33,13 +33,22 @@ func (e *Editor) drawSidebar(screen tcell.Screen, x, y, width, height int) (int,
 		}
 		disp += strings.Repeat(" ", width-len(disp))
 
+		gitFg, hasGit := e.sidebarGitColor(name)
 		if e.mode == "sidebar" && idx == e.sidebarIdx {
+			fg := colText
+			if hasGit {
+				fg = gitFg
+			}
 			for dx, ch := range disp {
-				screen.SetContent(x+dx, rowY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colText))
+				screen.SetContent(x+dx, rowY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(fg))
 			}
 		} else {
+			fg := colSubtext0
+			if hasGit {
+				fg = gitFg
+			}
 			for dx, ch := range disp {
-				screen.SetContent(x+dx, rowY, ch, nil, tcell.StyleDefault.Background(colMantle).Foreground(colSubtext0))
+				screen.SetContent(x+dx, rowY, ch, nil, tcell.StyleDefault.Background(colMantle).Foreground(fg))
 			}
 		}
 	}
@@ -96,7 +105,7 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 	contentH := height - tabH
 
 	lnW := e.maxLineNumW()
-	gutterW := lnW + 2
+	gutterW := lnW + 3
 
 	for dy := 0; dy < contentH; dy++ {
 		by := dy + e.offset.Y
@@ -109,12 +118,20 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		for gx := 0; gx < gutterW && gx < editW; gx++ {
 			screen.SetContent(editX+gx, screenY, ' ', nil, tcell.StyleDefault.Background(colBase).Foreground(colOverlay0))
 		}
+		if by < len(e.openFiles[e.activeTab].gitLineStat) {
+			switch e.openFiles[e.activeTab].gitLineStat[by] {
+			case '~':
+				screen.SetContent(editX, screenY, '▎', nil, tcell.StyleDefault.Background(colBase).Foreground(colNumber))
+			case '+':
+				screen.SetContent(editX, screenY, '▎', nil, tcell.StyleDefault.Background(colBase).Foreground(colGreen))
+			}
+		}
 		lnStr := fmt.Sprintf("%*d ", lnW, by+1)
 		for gi, ch := range lnStr {
-			if gi >= gutterW {
+			if gi+1 >= gutterW {
 				break
 			}
-			screen.SetContent(editX+gi, screenY, ch, nil, tcell.StyleDefault.Background(colBase).Foreground(colOverlay0))
+			screen.SetContent(editX+gi+1, screenY, ch, nil, tcell.StyleDefault.Background(colBase).Foreground(colOverlay0))
 		}
 
 		line := []rune(e.buffer[by])
@@ -303,7 +320,11 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		shortcuts = " ^F search │ ^Z undo │ ^Y redo │ ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^W close │ Alt+<> tab │ Sh+Alt+<> resize │ Alt+T theme "
 	}
 
-	right := fmt.Sprintf(" %d/%d  %d:%d ", e.cursor.Y+1, max(1, len(e.buffer)), e.cursor.Y+1, e.cursor.X+1)
+	branchTag := ""
+	if e.git != nil && e.git.branch != "" {
+		branchTag = " @" + e.git.branch + " "
+	}
+	right := branchTag + fmt.Sprintf("%d/%d  %d:%d ", e.cursor.Y+1, max(1, len(e.buffer)), e.cursor.Y+1, e.cursor.X+1)
 
 	modeEnd := len(modeTag)
 	nameX := modeEnd + 2
@@ -383,7 +404,7 @@ func (e *Editor) scrollCursor() {
 		sw = e.sidebarWidth + 2
 	}
 	ew := width - sw
-	lnW := e.maxLineNumW() + 2
+	lnW := e.maxLineNumW() + 3
 	ew -= lnW
 	if ew < 1 {
 		ew = 1

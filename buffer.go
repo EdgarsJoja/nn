@@ -30,6 +30,8 @@ type FileTab struct {
 	selection    Selection
 	modified     bool
 	syntaxTokens []syntaxToken
+	gitLineStat  []byte
+	headContent  string
 }
 
 func (e *Editor) activeFile() *FileTab {
@@ -89,6 +91,7 @@ func (e *Editor) undo() {
 	e.openFiles[e.activeTab].syntaxTokens = nil
 	e.lastOp = opNone
 	e.cursorInBounds()
+	e.updateGitLineStat()
 }
 
 func (e *Editor) redo() {
@@ -117,6 +120,7 @@ func (e *Editor) redo() {
 	e.openFiles[e.activeTab].syntaxTokens = nil
 	e.lastOp = opNone
 	e.cursorInBounds()
+	e.updateGitLineStat()
 }
 
 func (e *Editor) setModified() {
@@ -125,6 +129,7 @@ func (e *Editor) setModified() {
 		e.openFiles[e.activeTab].modified = true
 		e.openFiles[e.activeTab].syntaxTokens = nil
 	}
+	e.updateGitLineStat()
 }
 
 func (e *Editor) saveCurrentTab() {
@@ -164,6 +169,7 @@ func (e *Editor) switchTab(dir int) {
 	}
 	e.restoreTab(next)
 	e.msg("tab: " + filepath.Base(e.openFiles[next].filename))
+	e.refreshGit()
 }
 
 func (e *Editor) closeTab() {
@@ -196,6 +202,7 @@ func (e *Editor) loadFile(path string) {
 			e.saveCurrentTab()
 			e.restoreTab(i)
 			e.msg("switched to " + filepath.Base(path))
+			e.refreshGit()
 			return
 		}
 	}
@@ -217,6 +224,7 @@ func (e *Editor) loadFile(path string) {
 		e.redoStack = nil
 		e.restoreTab(0)
 		e.msg("opened " + filepath.Base(path))
+		e.refreshGit()
 		return
 	}
 
@@ -240,6 +248,7 @@ func (e *Editor) loadFile(path string) {
 	e.redoStack = nil
 	e.restoreTab(len(e.openFiles) - 1)
 	e.msg("opened " + filepath.Base(path))
+	e.refreshGit()
 }
 
 func (e *Editor) saveFile(path string) {
@@ -398,5 +407,6 @@ func (e *Editor) openFile(path string) error {
 	e.undoStack = nil
 	e.redoStack = nil
 	e.restoreTab(e.activeTab)
+	e.refreshGit()
 	return nil
 }
