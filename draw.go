@@ -57,6 +57,11 @@ func (e *Editor) drawSidebar(screen tcell.Screen, x, y, width, height int) (int,
 }
 
 func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
+	if e.gitDirty {
+		e.gitDirty = false
+		e.updateGitLineStat()
+	}
+
 	e.tokenizeBuffer()
 
 	sw := 0
@@ -107,6 +112,17 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 	lnW := e.maxLineNumW()
 	gutterW := lnW + 3
 
+	searchQlen := len([]rune(e.searchQuery))
+	type matchRange struct{ start, end int; active bool }
+	searchByLine := make(map[int][]matchRange)
+	for mi, m := range e.searchMatches {
+		searchByLine[m.Y] = append(searchByLine[m.Y], matchRange{
+			start:  m.X,
+			end:    m.X + searchQlen,
+			active: mi == e.searchIdx,
+		})
+	}
+
 	for dy := 0; dy < contentH; dy++ {
 		by := dy + e.offset.Y
 		screenY := contentY + dy
@@ -136,7 +152,6 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 
 		line := []rune(e.buffer[by])
 		textStart := editX + gutterW
-		searchQlen := len([]rune(e.searchQuery))
 		bufX := e.offset.X
 		for dispX := 0; dispX < editW-gutterW && bufX < len(line); {
 			ch := line[bufX]
@@ -146,18 +161,16 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 				st = tcell.StyleDefault.Background(colSurface1).Foreground(fg)
 			}
 			if searchQlen > 0 {
-				for mi, m := range e.searchMatches {
-					if m.Y > by {
-						break
-					}
-					if m.Y == by && bufX >= m.X && bufX < m.X+searchQlen {
-						bg := colSurface2
-						if mi == e.searchIdx {
-							bg = colKeyword
-							fg = colBase
+				if infos, ok := searchByLine[by]; ok {
+					for _, info := range infos {
+						if bufX >= info.start && bufX < info.end {
+							if info.active {
+								st = st.Background(colKeyword).Foreground(colBase)
+							} else {
+								st = st.Background(colSurface2).Foreground(fg)
+							}
+							break
 						}
-						st = st.Background(bg).Foreground(fg)
-						break
 					}
 				}
 			}

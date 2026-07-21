@@ -26,66 +26,39 @@ func computeLineStat(headContent string, buffer []string) []byte {
 		buf = buf[:len(buf)-1]
 	}
 
-	m, n := len(headLines), len(buf)
-
-	dp := make([][]int, m+1)
-	for i := range dp {
-		dp[i] = make([]int, n+1)
-	}
-	for i := 1; i <= m; i++ {
-		for j := 1; j <= n; j++ {
-			if headLines[i-1] == buf[j-1] {
-				dp[i][j] = dp[i-1][j-1] + 1
-			} else if dp[i-1][j] >= dp[i][j-1] {
-				dp[i][j] = dp[i-1][j]
-			} else {
-				dp[i][j] = dp[i][j-1]
-			}
-		}
-	}
-
-	stat := make([]byte, n)
+	stat := make([]byte, len(buf))
 	for i := range stat {
 		stat[i] = '+'
 	}
 
-	type edit struct {
-		kind byte // 'M' match, 'I' insert, 'D' delete
-		bi   int  // buffer index (for M/I)
-	}
-	var ops []edit
-
-	i, j := m, n
-	for i > 0 || j > 0 {
-		if i > 0 && j > 0 && headLines[i-1] == buf[j-1] {
-			ops = append(ops, edit{'M', j - 1})
-			i--
-			j--
-		} else if j > 0 && (i == 0 || dp[i][j-1] >= dp[i-1][j]) {
-			ops = append(ops, edit{'I', j - 1})
-			j--
-		} else if i > 0 {
-			ops = append(ops, edit{'D', -1})
-			i--
-		}
+	// Forward: match identical lines from the start
+	i, j := 0, 0
+	for i < len(headLines) && j < len(buf) && headLines[i] == buf[j] {
+		stat[j] = ' '
+		i++
+		j++
 	}
 
-	// Reverse and pair deletions with nearby insertions
-	delCount := 0
-	for k := len(ops) - 1; k >= 0; k-- {
-		switch ops[k].kind {
-		case 'M':
-			stat[ops[k].bi] = ' '
-			delCount = 0
-		case 'I':
-			if delCount > 0 {
-				stat[ops[k].bi] = '~'
-				delCount--
+	// Backward: match identical lines from the end
+	ti, tj := len(headLines)-1, len(buf)-1
+	for ti >= i && tj >= j && headLines[ti] == buf[tj] {
+		stat[tj] = ' '
+		ti--
+		tj--
+	}
+
+	// Middle section: position-based comparison.
+	// Each buffer line is compared against the head line at the same offset
+	// within the middle. Matched pair → ' '; different → '~';
+	// buffer lines beyond head length → '+'.
+	for k := j; k <= tj; k++ {
+		headPos := i + (k - j)
+		if headPos <= ti {
+			if buf[k] == headLines[headPos] {
+				stat[k] = ' '
 			} else {
-				stat[ops[k].bi] = '+'
+				stat[k] = '~'
 			}
-		case 'D':
-			delCount++
 		}
 	}
 
@@ -172,11 +145,7 @@ func (e *Editor) refreshGit() {
 
 	blob, err := tree.File(relPath)
 	if err != nil {
-		stat := make([]byte, len(e.buffer))
-		for i := range stat {
-			stat[i] = '+'
-		}
-		tab.gitLineStat = stat
+		tab.gitLineStat = nil
 		tab.headContent = ""
 		return
 	}
@@ -214,8 +183,17 @@ func (e *Editor) sidebarGitColor(name string) (tcell.Color, bool) {
 	}
 	rel = filepath.ToSlash(rel)
 
-	// If the active file matches this sidebar entry and has unsaved changes,
-	// always show modified regardless of what wt.Status() says
+	s, ok := e.git.status[rel]
+	if !ok {
+		return 0, false
+	}
+
+	// Untracked files should always show red; ignore any gitLineStat override
+	if s.Worktree == git.Untracked || s.Staging == git.Untracked {
+		return colRed, true
+	}
+
+	// For tracked files, check gitLineStat for unsaved changes
 	if e.openFiles[e.activeTab].gitLineStat != nil {
 		tabPath := e.openFiles[e.activeTab].filepath
 		if tabPath == "" {
@@ -234,13 +212,7 @@ func (e *Editor) sidebarGitColor(name string) (tcell.Color, bool) {
 		}
 	}
 
-	s, ok := e.git.status[rel]
-	if !ok {
-		return 0, false
-	}
 	switch {
-	case s.Worktree == git.Untracked || s.Staging == git.Untracked:
-		return colRed, true
 	case s.Worktree == git.Modified || s.Staging == git.Modified:
 		return colNumber, true
 	case s.Worktree == git.Added || s.Staging == git.Added:

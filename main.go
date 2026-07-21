@@ -67,6 +67,9 @@ type Editor struct {
 
 	pendingDelPath string
 	git           *gitInfo
+
+	gitDirty          bool
+	tokenizeDebounce  int
 }
 
 func (e *Editor) msg(text string) {

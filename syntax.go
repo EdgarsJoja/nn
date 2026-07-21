@@ -146,8 +146,14 @@ func tokenTypeColor(tt chroma.TokenType) tcell.Color {
 
 func (e *Editor) tokenizeBuffer() {
 	tab := e.openFiles[e.activeTab]
-	if tab.syntaxTokens != nil {
+	if tab.syntaxTokens != nil && e.tokenizeDebounce == 0 {
 		return
+	}
+	if e.tokenizeDebounce > 0 {
+		e.tokenizeDebounce--
+		if tab.syntaxTokens != nil {
+			return
+		}
 	}
 	lang := langFromExt(tab.filename)
 	if lang == "" {
