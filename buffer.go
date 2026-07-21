@@ -169,7 +169,7 @@ func (e *Editor) switchTab(dir int) {
 	}
 	e.restoreTab(next)
 	e.msg("tab: " + filepath.Base(e.openFiles[next].filename))
-	e.refreshGit()
+	e.refreshGitTab()
 }
 
 func (e *Editor) closeTab() {

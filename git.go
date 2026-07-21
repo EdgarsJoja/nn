@@ -12,6 +12,9 @@ type gitInfo struct {
 	root   string
 	branch string
 	status map[string]*git.FileStatus
+	dir    string
+	repo   *git.Repository
+	wt     *git.Worktree
 }
 
 func computeLineStat(headContent string, buffer []string) []byte {
@@ -66,7 +69,6 @@ func computeLineStat(headContent string, buffer []string) []byte {
 }
 
 func (e *Editor) refreshGit() {
-	e.git = nil
 	tab := e.activeFile()
 
 	filePath := ""
@@ -94,31 +96,84 @@ func (e *Editor) refreshGit() {
 
 	repo, err := git.PlainOpenWithOptions(dir, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
+		e.git = nil
 		return
 	}
 
 	ref, err := repo.Head()
 	if err != nil {
+		e.git = nil
 		return
-	}
-
-	g := &gitInfo{
-		branch: ref.Name().Short(),
 	}
 
 	wt, err := repo.Worktree()
 	if err != nil {
+		e.git = nil
 		return
 	}
-	g.root = wt.Filesystem.Root()
 
 	status, err := wt.Status()
 	if err != nil {
+		e.git = nil
 		return
 	}
-	g.status = status
-	e.git = g
 
+	e.git = &gitInfo{
+		root:   wt.Filesystem.Root(),
+		branch: ref.Name().Short(),
+		status: status,
+		dir:    dir,
+		repo:   repo,
+		wt:     wt,
+	}
+
+	e.updateGitFileInfo()
+}
+
+func (e *Editor) refreshGitTab() {
+	tab := e.activeFile()
+
+	filePath := ""
+	if tab != nil {
+		filePath = tab.filepath
+		if filePath == "" {
+			filePath = tab.filename
+		}
+	}
+
+	var dir string
+	if filePath != "" {
+		absPath, err := filepath.Abs(filePath)
+		if err != nil {
+			return
+		}
+		dir = filepath.Dir(absPath)
+	} else {
+		absDir, err := filepath.Abs(e.sidebarDir)
+		if err != nil {
+			return
+		}
+		dir = absDir
+	}
+
+	if e.git != nil && e.git.repo != nil && e.git.dir == dir {
+		e.updateGitFileInfo()
+		return
+	}
+
+	e.refreshGit()
+}
+
+func (e *Editor) updateGitFileInfo() {
+	tab := e.activeFile()
+	if tab == nil || e.git == nil || e.git.repo == nil {
+		return
+	}
+
+	filePath := tab.filepath
+	if filePath == "" {
+		filePath = tab.filename
+	}
 	if filePath == "" {
 		return
 	}
@@ -128,7 +183,19 @@ func (e *Editor) refreshGit() {
 		return
 	}
 
-	commit, err := repo.CommitObject(ref.Hash())
+	relPath, err := filepath.Rel(e.git.root, absPath)
+	if err != nil {
+		return
+	}
+	relPath = filepath.ToSlash(relPath)
+
+	ref, err := e.git.repo.Head()
+	if err != nil {
+		return
+	}
+	e.git.branch = ref.Name().Short()
+
+	commit, err := e.git.repo.CommitObject(ref.Hash())
 	if err != nil {
 		return
 	}
@@ -136,12 +203,6 @@ func (e *Editor) refreshGit() {
 	if err != nil {
 		return
 	}
-
-	relPath, err := filepath.Rel(g.root, absPath)
-	if err != nil {
-		return
-	}
-	relPath = filepath.ToSlash(relPath)
 
 	blob, err := tree.File(relPath)
 	if err != nil {
