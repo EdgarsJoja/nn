@@ -1,8 +1,8 @@
 # nn
 
 A terminal-based text editor written in Go, inspired by nano. Arrow-key navigation,
-clipboard operations, syntax highlighting, search, undo/redo, file sidebar, and
-multi-theme support.
+clipboard operations, syntax highlighting, search, undo/redo, file sidebar, git
+integration, and multi-theme support.
 
 Built with [tview](https://github.com/rivo/tview) and [tcell](https://github.com/gdamore/tcell).
 
@@ -43,6 +43,7 @@ Requires Go 1.24+.
 | `Ctrl+Q` | Quit |
 | `Alt+T` | Cycle theme |
 | `Alt+← / →` | Switch tabs |
+| `Shift+Alt+← / →` | Resize sidebar |
 | `↑ ↓ ← →` | Move cursor |
 | `Shift+↑ ↓ ← →` | Extend selection |
 | `Ctrl+← / →` | Word jump |
@@ -61,6 +62,8 @@ Requires Go 1.24+.
 | Key | Action |
 |---|---|
 | `Ctrl+F` | Filter files by name |
+| `Ctrl+N` | New file |
+| `Ctrl+R` | Toggle hidden files |
 | `↑` / `↓` | Navigate files |
 | `←` | Go to parent directory |
 | `→` | Enter directory |
@@ -68,10 +71,10 @@ Requires Go 1.24+.
 | `Page Up` / `Page Down` | Scroll page |
 | `Enter` | Open file / enter directory |
 | `Delete` | Delete selected file or directory (with confirmation) |
-| `Ctrl+R` | Toggle hidden files |
 | `Escape` | Clear filter / switch to editor |
 | `Tab` / `Ctrl+B` | Switch to editor |
 | `Alt+← / →` | Switch tabs |
+| `Shift+Alt+← / →` | Resize sidebar |
 
 ### Search mode (Ctrl+F in editor)
 
@@ -105,7 +108,8 @@ Protocol Buffers, Terraform, Dockerfile, Nix, Fish, OCaml, and more.
 Available themes: Catppuccin Mocha, Catppuccin Latte, Tokyo Night,
 Tokyo Night Day, Dracula, One Dark, Ayu Light, Gruvbox Dark.
 
-Theme and dotfiles preference are persisted to `~/.config/nn/settings.json`.
+Theme, dotfiles preference, and sidebar width are persisted to
+`~/.config/nn/settings.json`.
 
 ## Settings
 
@@ -113,6 +117,7 @@ Persisted to `~/.config/nn/settings.json`:
 
 - `theme` — last selected theme name
 - `hide_dotfiles` — whether hidden files are shown in the sidebar
+- `sidebar_width` — sidebar width in characters
 
 ## Sidebar
 
@@ -121,12 +126,29 @@ Persisted to `~/.config/nn/settings.json`:
 - Directory position memory (remembers your scroll position per directory)
 - Delete files/directories with `Delete` (with confirmation prompt)
 - Toggle hidden files with `Ctrl+R` (hidden by default)
+- Resize with `Shift+Alt+← / →` (clamped 15–60)
 
 ## Status Bar
 
-Shows mode indicator, filename, context-sensitive shortcuts, cursor position
-(`row:col`), and transient messages. Shortcuts truncate to fit terminal width;
-press `F1` for the full keybinding reference.
+Shows mode indicator (`EDITOR` / `SIDEBAR`), filename (`•` when modified),
+transient messages (green background), `F1 help` hint, git branch,
+and cursor position (`row:col`). Press `F1` for the full keybinding reference.
+
+## Git Integration
+
+- Git status computed via pure Go (`go-git/v5`), no external `git` binary
+- Branch name shown in the status bar as `@branch`
+- Sidebar filenames colored by git status:
+  - Red — untracked or deleted
+  - Orange — modified (or unsaved active file)
+  - Green — staged/added
+- Editor gutter shows a thin bar indicator (`▎`) per line:
+  - Orange — line modified
+  - Green — line added
+  - Gray — unchanged
+- Line-level diff uses LCS (longest common subsequence) for accurate markers
+- Git status refreshes on save, file open, tab switch, undo/redo, and
+  every 10 seconds via background ticker
 
 ## Mouse
 
