@@ -48,6 +48,7 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlR:
 		e.hideDotfiles = !e.hideDotfiles
 		e.refreshDir()
+		e.saveSettings()
 		return nil
 	case tcell.KeyCtrlQ:
 		e.app.Stop()
@@ -235,8 +236,13 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 			absDir, _ := filepath.Abs(e.sidebarDir)
 			parent := filepath.Dir(absDir)
 			if parent != absDir {
+				e.sidebarDirIdx[absDir] = e.sidebarIdx
 				e.sidebarDir = parent
-				e.sidebarIdx = 0
+				if saved, ok := e.sidebarDirIdx[parent]; ok {
+					e.sidebarIdx = saved
+				} else {
+					e.sidebarIdx = 0
+				}
 				e.sidebarOff = 0
 				e.refreshDir()
 			}
@@ -271,6 +277,7 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlR:
 		e.hideDotfiles = !e.hideDotfiles
 		e.refreshDir()
+		e.saveSettings()
 		return nil
 	case tcell.KeyDelete:
 		e.deleteSidebarFile()

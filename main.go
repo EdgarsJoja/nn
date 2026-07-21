@@ -39,6 +39,7 @@ type Editor struct {
 	hideDotfiles bool
 	sidebarFilter string
 	sidebarAllFiles []string
+	sidebarDirIdx map[string]int
 
 	mode      string
 	inputMode string
@@ -325,9 +326,19 @@ func (e *Editor) onSidebarSelectItem(idx int) {
 	p := filepath.Join(e.sidebarDir, name)
 	info, err := os.Stat(p)
 	if err == nil && info.IsDir() {
+		abs, _ := filepath.Abs(e.sidebarDir)
+		e.sidebarDirIdx[abs] = e.sidebarIdx
 		e.sidebarDir = p
-		e.sidebarIdx = 0
+		abs, _ = filepath.Abs(p)
+		if saved, ok := e.sidebarDirIdx[abs]; ok {
+			e.sidebarIdx = saved
+		} else {
+			e.sidebarIdx = 0
+		}
 		e.refreshDir()
+		if e.sidebarIdx == 0 && len(e.sidebarFiles) > 1 && strings.HasSuffix(e.sidebarFiles[1], "/") {
+			e.sidebarIdx = 1
+		}
 		e.app.SetFocus(e.sidebar)
 		return
 	}
@@ -349,7 +360,8 @@ func settingsPath() (string, error) {
 }
 
 type settings struct {
-	Theme string `json:"theme"`
+	Theme       string `json:"theme"`
+	HideDotfiles bool  `json:"hide_dotfiles"`
 }
 
 func (e *Editor) saveSettings() {
@@ -358,7 +370,10 @@ func (e *Editor) saveSettings() {
 		return
 	}
 	os.MkdirAll(filepath.Dir(path), 0755)
-	s := settings{Theme: themes[e.themeIdx].Name}
+	s := settings{
+		Theme:       themes[e.themeIdx].Name,
+		HideDotfiles: e.hideDotfiles,
+	}
 	data, err := json.Marshal(s)
 	if err != nil {
 		return
@@ -379,6 +394,7 @@ func (e *Editor) loadSettings() {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return
 	}
+	e.hideDotfiles = s.HideDotfiles
 	for i, t := range themes {
 		if t.Name == s.Theme {
 			e.themeIdx = i
@@ -407,8 +423,10 @@ func (e *Editor) Init() {
 	e.showSidebar = true
 	e.sidebarWidth = 28
 	e.sidebarDir = "."
+	e.hideDotfiles = true
 	e.running = true
 	e.themeIdx = 0
+	e.sidebarDirIdx = map[string]int{}
 	e.loadSettings()
 	e.activeTab = 0
 	e.openFiles = []*FileTab{{buffer: []string{""}}}
