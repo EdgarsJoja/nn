@@ -62,6 +62,10 @@ func langFromExt(name string) string {
 		return "css"
 	case ".sql":
 		return "sql"
+	case ".php", ".phtml", ".php3", ".php4", ".php5", ".php7", ".phps":
+		return "php"
+	case ".xml", ".xsd", ".xsl", ".xslt", ".svg", ".plist":
+		return "xml"
 	case ".lua":
 		return "lua"
 	case ".zig":
