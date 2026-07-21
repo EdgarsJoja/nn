@@ -122,6 +122,7 @@ func (e *Editor) loadFile(path string) {
 			tab.buffer = []string{""}
 		}
 		tab.filename = path
+		tab.syntaxTokens = nil
 		e.restoreTab(0)
 		e.msg("opened " + filepath.Base(path))
 		return
@@ -139,8 +140,9 @@ func (e *Editor) loadFile(path string) {
 		buf = []string{""}
 	}
 	e.openFiles = append(e.openFiles, &FileTab{
-		filename: path,
-		buffer:   buf,
+		filename:     path,
+		buffer:       buf,
+		syntaxTokens: nil,
 	})
 	e.restoreTab(len(e.openFiles) - 1)
 	e.msg("opened " + filepath.Base(path))
@@ -287,11 +289,12 @@ func (e *Editor) openFile(path string) error {
 		lines = []string{""}
 	}
 	tab := &FileTab{
-		filename: filepath.Base(path),
-		filepath: path,
-		buffer:   lines,
-		cursor:   Point{},
-		offset:   Point{},
+		filename:     filepath.Base(path),
+		filepath:     path,
+		buffer:       lines,
+		cursor:       Point{},
+		offset:       Point{},
+		syntaxTokens: nil,
 	}
 	e.openFiles = append(e.openFiles, tab)
 	e.activeTab = len(e.openFiles) - 1

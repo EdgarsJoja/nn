@@ -156,7 +156,7 @@ func (e *Editor) tokenizeBuffer() {
 		return
 	}
 
-	text := strings.Join(tab.buffer, "\n")
+	text := strings.Join(e.buffer, "\n")
 
 	iterator, err := lexer.Tokenise(nil, text)
 	if err != nil {
