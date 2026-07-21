@@ -385,8 +385,9 @@ func settingsPath() (string, error) {
 }
 
 type settings struct {
-	Theme       string `json:"theme"`
-	HideDotfiles bool  `json:"hide_dotfiles"`
+	Theme        string `json:"theme"`
+	HideDotfiles  bool  `json:"hide_dotfiles"`
+	SidebarWidth  int   `json:"sidebar_width"`
 }
 
 func (e *Editor) saveSettings() {
@@ -396,8 +397,9 @@ func (e *Editor) saveSettings() {
 	}
 	os.MkdirAll(filepath.Dir(path), 0755)
 	s := settings{
-		Theme:       themes[e.themeIdx].Name,
+		Theme:        themes[e.themeIdx].Name,
 		HideDotfiles: e.hideDotfiles,
+		SidebarWidth: e.sidebarWidth,
 	}
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -420,12 +422,30 @@ func (e *Editor) loadSettings() {
 		return
 	}
 	e.hideDotfiles = s.HideDotfiles
+	if s.SidebarWidth >= 15 {
+		e.sidebarWidth = s.SidebarWidth
+	}
 	for i, t := range themes {
 		if t.Name == s.Theme {
 			e.themeIdx = i
 			return
 		}
 	}
+}
+
+func (e *Editor) resizeSidebar(delta int) {
+	e.sidebarWidth += delta * 3
+	if e.sidebarWidth < 15 {
+		e.sidebarWidth = 15
+	}
+	if e.sidebarWidth > 60 {
+		e.sidebarWidth = 60
+	}
+	e.buildLayout()
+	if e.mode == "sidebar" {
+		e.app.SetFocus(e.sidebar)
+	}
+	e.saveSettings()
 }
 
 func (e *Editor) Init() {
@@ -581,24 +601,25 @@ func (e *Editor) makeWidgets() {
 		"  ─────────────────────",
 		"",
 		"  EDITOR MODE",
-		"    F1           Show this help",
-		"    Ctrl+F       Search",
-		"    Ctrl+Z       Undo",
-		"    Ctrl+Y       Redo",
-		"    Ctrl+S       Save",
-		"    Ctrl+O       Open file",
-		"    Ctrl+N       New file",
-		"    Ctrl+C       Copy",
-		"    Ctrl+V       Paste",
-		"    Ctrl+X       Cut",
-		"    Ctrl+A       Select all",
-		"    Ctrl+D       Duplicate line",
-		"    Ctrl+W       Close tab",
-		"    Ctrl+B       Toggle sidebar",
-		"    Ctrl+R       Toggle dotfiles",
-		"    Ctrl+Q       Quit",
-		"    Alt+T        Cycle theme",
-		"    Alt+<-/->    Switch tabs",
+		"    F1                  Show this help",
+		"    Ctrl+F              Search",
+		"    Ctrl+Z              Undo",
+		"    Ctrl+Y              Redo",
+		"    Ctrl+S              Save",
+		"    Ctrl+O              Open file",
+		"    Ctrl+N              New file",
+		"    Ctrl+C              Copy",
+		"    Ctrl+V              Paste",
+		"    Ctrl+X              Cut",
+		"    Ctrl+A              Select all",
+		"    Ctrl+D              Duplicate line",
+		"    Ctrl+W              Close tab",
+		"    Ctrl+B              Toggle sidebar",
+		"    Ctrl+R              Toggle dotfiles",
+		"    Ctrl+Q              Quit",
+		"    Alt+T               Cycle theme",
+		"    Alt+<-/->           Switch tabs",
+		"    Shift+Alt+<-/->     Resize sidebar",
 		"",
 		"  SIDEBAR MODE",
 		"    Up/Down      Navigate files",

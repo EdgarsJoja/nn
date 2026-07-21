@@ -105,7 +105,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 			e.selection.End = e.cursor
 		}
 	case tcell.KeyLeft:
-		if hasAlt {
+		if hasShift && hasAlt {
+			e.resizeSidebar(-1)
+		} else if hasAlt {
 			e.switchTab(-1)
 		} else if hasCtrl {
 			if !hasShift && e.selection.Active {
@@ -141,7 +143,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 			}
 		}
 	case tcell.KeyRight:
-		if hasAlt {
+		if hasShift && hasAlt {
+			e.resizeSidebar(1)
+		} else if hasAlt {
 			e.switchTab(1)
 		} else if hasCtrl {
 			if !hasShift && e.selection.Active {
@@ -239,7 +243,9 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 			e.sidebarIdx++
 		}
 	case tcell.KeyLeft:
-		if event.Modifiers()&tcell.ModAlt != 0 {
+		if event.Modifiers()&tcell.ModAlt != 0 && event.Modifiers()&tcell.ModShift != 0 {
+			e.resizeSidebar(-1)
+		} else if event.Modifiers()&tcell.ModAlt != 0 {
 			e.switchTab(-1)
 		} else {
 			absDir, _ := filepath.Abs(e.sidebarDir)
@@ -258,7 +264,9 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 		return nil
 	case tcell.KeyRight:
-		if event.Modifiers()&tcell.ModAlt != 0 {
+		if event.Modifiers()&tcell.ModAlt != 0 && event.Modifiers()&tcell.ModShift != 0 {
+			e.resizeSidebar(1)
+		} else if event.Modifiers()&tcell.ModAlt != 0 {
 			e.switchTab(1)
 		} else {
 			e.sidebarEnterDir()
@@ -287,6 +295,9 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 		e.hideDotfiles = !e.hideDotfiles
 		e.refreshDir()
 		e.saveSettings()
+		return nil
+	case tcell.KeyCtrlN:
+		e.cmdNew()
 		return nil
 	case tcell.KeyDelete:
 		e.deleteSidebarFile()

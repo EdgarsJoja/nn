@@ -298,9 +298,9 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		if e.hideDotfiles {
 			dot = "show"
 		}
-		shortcuts = " ^F filter │ ^R " + dot + " dotfiles │ ← up │ → enter │ Del delete │ Esc edit │ Alt←→ tab "
+		shortcuts = " ^F filter │ ^R " + dot + " dotfiles │ <- up │ -> enter │ Del delete │ Esc edit │ Alt+<> tab "
 	} else {
-		shortcuts = " ^F search │ ^Z undo │ ^Y redo │ ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^W close │ Alt←→ tab │ Alt+T theme "
+		shortcuts = " ^F search │ ^Z undo │ ^Y redo │ ^S save │ ^O open │ ^N new │ ^C copy │ ^V paste │ ^X cut │ ^D dup │ ^W close │ Alt+<> tab │ Sh+Alt+<> resize │ Alt+T theme "
 	}
 
 	right := fmt.Sprintf(" %d/%d  %d:%d ", e.cursor.Y+1, max(1, len(e.buffer)), e.cursor.Y+1, e.cursor.X+1)
