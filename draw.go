@@ -137,11 +137,12 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		line := []rune(e.buffer[by])
 		textStart := editX + gutterW
 		searchQlen := len([]rune(e.searchQuery))
-		for dx := 0; dx < editW-gutterW && dx+e.offset.X < len(line); dx++ {
-			ch := line[dx+e.offset.X]
-			fg := e.tokenColorAt(by, dx+e.offset.X)
+		bufX := e.offset.X
+		for dispX := 0; dispX < editW-gutterW && bufX < len(line); {
+			ch := line[bufX]
+			fg := e.tokenColorAt(by, bufX)
 			st := tcell.StyleDefault.Background(colBase).Foreground(fg)
-			if e.selection.Active && e.inSelection(Point{X: dx + e.offset.X, Y: by}) {
+			if e.selection.Active && e.inSelection(Point{X: bufX, Y: by}) {
 				st = tcell.StyleDefault.Background(colSurface1).Foreground(fg)
 			}
 			if searchQlen > 0 {
@@ -149,7 +150,7 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 					if m.Y > by {
 						break
 					}
-					if m.Y == by && dx+e.offset.X >= m.X && dx+e.offset.X < m.X+searchQlen {
+					if m.Y == by && bufX >= m.X && bufX < m.X+searchQlen {
 						bg := colSurface2
 						if mi == e.searchIdx {
 							bg = colKeyword
@@ -160,10 +161,31 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 					}
 				}
 			}
-			screen.SetContent(textStart+dx, screenY, ch, nil, st)
+			if ch == '\t' {
+				tabW := 4 - (dispX % 4)
+				end := dispX + tabW
+				if end > editW-gutterW {
+					end = editW - gutterW
+				}
+				for dispX < end {
+					screen.SetContent(textStart+dispX, screenY, ' ', nil, st)
+					dispX++
+				}
+				bufX++
+			} else {
+				screen.SetContent(textStart+dispX, screenY, ch, nil, st)
+				dispX++
+				bufX++
+			}
 		}
 		if e.selection.Active && e.inSelection(Point{X: len(line), Y: by}) {
-			fillStart := textStart + clamp(len(line)-e.offset.X, 0, editW-gutterW)
+			fillStart := textStart + bufToDisp(line, len(line)) - bufToDisp(line, e.offset.X)
+			if fillStart < textStart {
+				fillStart = textStart
+			}
+			if fillStart > textStart+editW-gutterW {
+				fillStart = textStart + editW - gutterW
+			}
 			for fx := fillStart; fx < textStart+editW-gutterW; fx++ {
 				screen.SetContent(fx, screenY, ' ', nil, tcell.StyleDefault.Background(colSurface1))
 			}
@@ -171,7 +193,8 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 	}
 
 	if e.mode == "editor" {
-		cx := editX + gutterW + e.cursor.X - e.offset.X
+		line := []rune(e.buffer[e.cursor.Y])
+		cx := editX + gutterW + bufToDisp(line, e.cursor.X) - bufToDisp(line, e.offset.X)
 		cy := contentY + e.cursor.Y - e.offset.Y
 		if cx >= editX && cx < editX+editW && cy >= y && cy < y+height {
 			screen.ShowCursor(cx, cy)
@@ -415,7 +438,45 @@ func (e *Editor) scrollCursor() {
 	if e.cursor.X < e.offset.X {
 		e.offset.X = e.cursor.X
 	}
-	if e.cursor.X >= e.offset.X+ew {
-		e.offset.X = e.cursor.X - ew + 1
+	line := []rune(e.buffer[e.cursor.Y])
+	cursorDisp := bufToDisp(line, e.cursor.X)
+	offsetDisp := bufToDisp(line, e.offset.X)
+	if cursorDisp < offsetDisp {
+		e.offset.X = dispToBuf(line, cursorDisp)
 	}
+	if cursorDisp >= offsetDisp+ew {
+		wantDisp := cursorDisp - ew + 1
+		e.offset.X = dispToBuf(line, wantDisp)
+	}
+}
+
+func bufToDisp(line []rune, bufX int) int {
+	col := 0
+	for i := 0; i < bufX && i < len(line); i++ {
+		if line[i] == '\t' {
+			col += 4 - (col % 4)
+		} else {
+			col++
+		}
+	}
+	return col
+}
+
+func dispToBuf(line []rune, dispX int) int {
+	col := 0
+	for i := 0; i < len(line); i++ {
+		if line[i] == '\t' {
+			next := col + 4 - (col % 4)
+			if next > dispX {
+				return i
+			}
+			col = next
+		} else {
+			if col >= dispX {
+				return i
+			}
+			col++
+		}
+	}
+	return len(line)
 }
