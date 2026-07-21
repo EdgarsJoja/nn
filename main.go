@@ -63,6 +63,8 @@ type Editor struct {
 	undoStack []undoState
 	redoStack []undoState
 	lastOp    int
+
+	pendingDelPath string
 }
 
 func (e *Editor) msg(text string) {
@@ -103,6 +105,16 @@ func (e *Editor) submitInput() {
 		e.restoreTab(len(e.openFiles) - 1)
 		e.refreshDir()
 		e.msg("new file: " + val)
+	case "confirm":
+		if val == "y" || val == "Y" {
+			if err := os.RemoveAll(e.pendingDelPath); err != nil {
+				e.msg("error: " + err.Error())
+			} else {
+				e.msg("deleted " + filepath.Base(e.pendingDelPath))
+			}
+			e.refreshDir()
+		}
+		e.pendingDelPath = ""
 	}
 	e.inputMode = ""
 }
@@ -119,6 +131,8 @@ func (e *Editor) cancelInput() {
 		if e.sidebarIdx >= len(e.sidebarFiles) {
 			e.sidebarIdx = 0
 		}
+	case "confirm":
+		e.pendingDelPath = ""
 	}
 	e.inputMode = ""
 	e.mainFlex.RemoveItem(e.inputField)
@@ -325,12 +339,8 @@ func (e *Editor) deleteSidebarFile() {
 	if p == "" {
 		return
 	}
-	if err := os.RemoveAll(p); err != nil {
-		e.msg("error: " + err.Error())
-		return
-	}
-	e.msg("deleted " + filepath.Base(p))
-	e.refreshDir()
+	e.pendingDelPath = p
+	e.showInput("confirm", "delete "+filepath.Base(p)+"? (y/n) ")
 }
 
 func (e *Editor) onSidebarSelectItem(idx int) {
