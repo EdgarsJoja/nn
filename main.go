@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -339,6 +340,53 @@ func (e *Editor) sidebarEnterDir() {
 	e.onSidebarSelectItem(e.sidebarIdx)
 }
 
+func settingsPath() (string, error) {
+	cfgDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cfgDir, "nn", "settings.json"), nil
+}
+
+type settings struct {
+	Theme string `json:"theme"`
+}
+
+func (e *Editor) saveSettings() {
+	path, err := settingsPath()
+	if err != nil {
+		return
+	}
+	os.MkdirAll(filepath.Dir(path), 0755)
+	s := settings{Theme: themes[e.themeIdx].Name}
+	data, err := json.Marshal(s)
+	if err != nil {
+		return
+	}
+	os.WriteFile(path, data, 0644)
+}
+
+func (e *Editor) loadSettings() {
+	path, err := settingsPath()
+	if err != nil {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var s settings
+	if err := json.Unmarshal(data, &s); err != nil {
+		return
+	}
+	for i, t := range themes {
+		if t.Name == s.Theme {
+			e.themeIdx = i
+			return
+		}
+	}
+}
+
 func (e *Editor) Init() {
 	e.app = tview.NewApplication()
 	e.app.EnableMouse(true)
@@ -361,6 +409,7 @@ func (e *Editor) Init() {
 	e.sidebarDir = "."
 	e.running = true
 	e.themeIdx = 0
+	e.loadSettings()
 	e.activeTab = 0
 	e.openFiles = []*FileTab{{buffer: []string{""}}}
 	applyTheme(themes[e.themeIdx])

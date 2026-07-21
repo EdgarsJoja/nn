@@ -53,4 +53,5 @@ func (e *Editor) cycleTheme() {
 	e.statusBox.SetBackgroundColor(colSurface1)
 	e.inputField.SetFieldBackgroundColor(colSurface0)
 	e.msg("theme: " + themes[e.themeIdx].Name)
+	e.saveSettings()
 }
