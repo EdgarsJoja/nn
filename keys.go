@@ -57,6 +57,12 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlF:
 		e.cmdSearch()
 		return nil
+	case tcell.KeyCtrlZ:
+		e.undo()
+		return nil
+	case tcell.KeyCtrlY:
+		e.redo()
+		return nil
 	case tcell.KeyCtrlB:
 		if !e.showSidebar {
 			e.showSidebar = true
@@ -362,6 +368,7 @@ func (e *Editor) inSelection(p Point) bool {
 }
 
 func (e *Editor) deleteBackward() {
+	e.saveUndoState(opDeleteBk)
 	if e.selection.Active {
 		e.deleteSelection()
 		return
@@ -382,6 +389,7 @@ func (e *Editor) deleteBackward() {
 }
 
 func (e *Editor) deleteForward() {
+	e.saveUndoState(opDeleteFd)
 	if e.selection.Active {
 		e.deleteSelection()
 		return
@@ -398,6 +406,7 @@ func (e *Editor) deleteForward() {
 }
 
 func (e *Editor) deleteLine() {
+	e.saveUndoState(opNone)
 	if len(e.buffer) == 1 {
 		e.buffer[0] = ""
 		e.cursor.X = 0
@@ -417,6 +426,7 @@ func (e *Editor) deleteLine() {
 }
 
 func (e *Editor) duplicateLine() {
+	e.saveUndoState(opNone)
 	line := e.buffer[e.cursor.Y]
 	dup := line
 	e.buffer = append(e.buffer, "")

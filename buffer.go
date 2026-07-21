@@ -14,6 +14,13 @@ type Selection struct {
 	End    Point
 }
 
+type undoState struct {
+	buffer    []string
+	cursor    Point
+	selection Selection
+	modified  bool
+}
+
 type FileTab struct {
 	filename     string
 	filepath     string
@@ -27,6 +34,89 @@ type FileTab struct {
 
 func (e *Editor) activeFile() *FileTab {
 	return e.openFiles[e.activeTab]
+}
+
+const maxUndo = 100
+
+const (
+	opNone     = 0
+	opInsert   = 1
+	opDeleteBk = 2
+	opDeleteFd = 3
+)
+
+func (e *Editor) saveUndoState(op int) {
+	if op == e.lastOp && len(e.undoStack) > 0 {
+		return
+	}
+	state := undoState{
+		buffer:    append([]string{}, e.buffer...),
+		cursor:    e.cursor,
+		selection: e.selection,
+		modified:  e.modified,
+	}
+	e.undoStack = append(e.undoStack, state)
+	if len(e.undoStack) > maxUndo {
+		e.undoStack = e.undoStack[1:]
+	}
+	e.redoStack = nil
+	e.lastOp = op
+}
+
+func (e *Editor) undo() {
+	if len(e.undoStack) == 0 {
+		return
+	}
+	redo := undoState{
+		buffer:    append([]string{}, e.buffer...),
+		cursor:    e.cursor,
+		selection: e.selection,
+		modified:  e.modified,
+	}
+	e.redoStack = append(e.redoStack, redo)
+
+	state := e.undoStack[len(e.undoStack)-1]
+	e.undoStack = e.undoStack[:len(e.undoStack)-1]
+
+	e.buffer = state.buffer
+	e.cursor = state.cursor
+	e.selection = state.selection
+	e.modified = state.modified
+	e.openFiles[e.activeTab].buffer = e.buffer
+	e.openFiles[e.activeTab].cursor = e.cursor
+	e.openFiles[e.activeTab].selection = e.selection
+	e.openFiles[e.activeTab].modified = e.modified
+	e.openFiles[e.activeTab].syntaxTokens = nil
+	e.lastOp = opNone
+	e.cursorInBounds()
+}
+
+func (e *Editor) redo() {
+	if len(e.redoStack) == 0 {
+		return
+	}
+	undo := undoState{
+		buffer:    append([]string{}, e.buffer...),
+		cursor:    e.cursor,
+		selection: e.selection,
+		modified:  e.modified,
+	}
+	e.undoStack = append(e.undoStack, undo)
+
+	state := e.redoStack[len(e.redoStack)-1]
+	e.redoStack = e.redoStack[:len(e.redoStack)-1]
+
+	e.buffer = state.buffer
+	e.cursor = state.cursor
+	e.selection = state.selection
+	e.modified = state.modified
+	e.openFiles[e.activeTab].buffer = e.buffer
+	e.openFiles[e.activeTab].cursor = e.cursor
+	e.openFiles[e.activeTab].selection = e.selection
+	e.openFiles[e.activeTab].modified = e.modified
+	e.openFiles[e.activeTab].syntaxTokens = nil
+	e.lastOp = opNone
+	e.cursorInBounds()
 }
 
 func (e *Editor) setModified() {
@@ -123,6 +213,8 @@ func (e *Editor) loadFile(path string) {
 		}
 		tab.filename = path
 		tab.syntaxTokens = nil
+		e.undoStack = nil
+		e.redoStack = nil
 		e.restoreTab(0)
 		e.msg("opened " + filepath.Base(path))
 		return
@@ -144,6 +236,8 @@ func (e *Editor) loadFile(path string) {
 		buffer:       buf,
 		syntaxTokens: nil,
 	})
+	e.undoStack = nil
+	e.redoStack = nil
 	e.restoreTab(len(e.openFiles) - 1)
 	e.msg("opened " + filepath.Base(path))
 }
@@ -207,6 +301,7 @@ func (e *Editor) deleteSelection() {
 }
 
 func (e *Editor) insertText(text string) {
+	e.saveUndoState(opInsert)
 	e.deleteSelection()
 	for _, ch := range text {
 		if ch == '\n' {
@@ -237,6 +332,7 @@ func (e *Editor) copySel() {
 }
 
 func (e *Editor) cutSel() {
+	e.saveUndoState(opNone)
 	if t := e.selectedText(); t != "" {
 		e.clipboard = t
 		e.deleteSelection()
@@ -245,6 +341,7 @@ func (e *Editor) cutSel() {
 }
 
 func (e *Editor) pasteClip() {
+	e.saveUndoState(opNone)
 	e.deleteSelection()
 	if e.clipboard == "" {
 		return
@@ -298,6 +395,8 @@ func (e *Editor) openFile(path string) error {
 	}
 	e.openFiles = append(e.openFiles, tab)
 	e.activeTab = len(e.openFiles) - 1
+	e.undoStack = nil
+	e.redoStack = nil
 	e.restoreTab(e.activeTab)
 	return nil
 }

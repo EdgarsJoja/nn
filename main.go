@@ -55,6 +55,10 @@ type Editor struct {
 	searchQuery   string
 	searchMatches []Point
 	searchIdx     int
+
+	undoStack []undoState
+	redoStack []undoState
+	lastOp    int
 }
 
 func (e *Editor) msg(text string) {
