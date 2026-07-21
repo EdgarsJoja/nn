@@ -17,6 +17,14 @@ type syntaxToken struct {
 }
 
 func langFromExt(name string) string {
+	base := strings.ToLower(filepath.Base(name))
+	switch base {
+	case "makefile":
+		return "makefile"
+	case "dockerfile":
+		return "dockerfile"
+	}
+
 	ext := filepath.Ext(name)
 	if ext == "" {
 		return ""
@@ -44,13 +52,13 @@ func langFromExt(name string) string {
 		return "java"
 	case ".rb":
 		return "ruby"
-	case ".sh", ".bash":
+	case ".sh", ".bash", ".env", ".envrc":
 		return "bash"
 	case ".zsh":
 		return "bash"
 	case ".yaml", ".yml":
 		return "yaml"
-	case ".json":
+	case ".json", ".prettierrc", ".eslintrc", ".babelrc":
 		return "json"
 	case ".toml":
 		return "toml"
@@ -90,12 +98,18 @@ func langFromExt(name string) string {
 		return "terraform"
 	case ".dockerfile":
 		return "dockerfile"
+	case ".editorconfig", ".gitmodules":
+		return "ini"
+	case ".gitignore", ".dockerignore", ".gitattributes":
+		return "gitignore"
 	case ".nix":
 		return "nix"
 	case ".fish":
 		return "fish"
 	case ".ml", ".mli":
 		return "ocaml"
+	case ".mk", ".mak":
+		return "makefile"
 	default:
 		return ""
 	}
