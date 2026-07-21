@@ -57,6 +57,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlF:
 		e.cmdSearch()
 		return nil
+	case tcell.KeyF1:
+		e.cmdHelp()
+		return nil
 	case tcell.KeyCtrlZ:
 		e.undo()
 		return nil
@@ -316,6 +319,9 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyCtrlF:
 		e.showInput("filesearch", "filter: ")
+		return nil
+	case tcell.KeyF1:
+		e.cmdHelp()
 		return nil
 	case tcell.KeyCtrlS:
 		if e.filename == "" {

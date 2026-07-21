@@ -30,6 +30,10 @@ type Editor struct {
 	inputField *tview.InputField
 	mainFlex   *tview.Flex
 
+	showHelp   bool
+	helpLines  []string
+	helpOffset int
+
 	sidebarDir   string
 	sidebarFiles []string
 	sidebarIdx   int
@@ -137,6 +141,13 @@ func (e *Editor) cmdSave() {
 func (e *Editor) cmdOpen()   { e.showInput("open", "open: ") }
 func (e *Editor) cmdNew()    { e.showInput("new", "new file: ") }
 func (e *Editor) cmdSearch() { e.showInput("search", "search: ") }
+
+func (e *Editor) cmdHelp() {
+	e.showHelp = !e.showHelp
+	if e.showHelp {
+		e.helpOffset = 0
+	}
+}
 
 func (e *Editor) updateSearch(query string) {
 	e.searchQuery = query
@@ -411,10 +422,42 @@ func (e *Editor) Init() {
 	e.app = tview.NewApplication()
 	e.app.EnableMouse(true)
 	e.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if e.showHelp {
+			switch event.Key() {
+			case tcell.KeyEscape, tcell.KeyF1:
+				e.showHelp = false
+				return nil
+			case tcell.KeyUp:
+				if e.helpOffset > 0 {
+					e.helpOffset--
+				}
+				return nil
+			case tcell.KeyDown:
+				e.helpOffset++
+				return nil
+			case tcell.KeyPgUp:
+				e.helpOffset -= 10
+				return nil
+			case tcell.KeyPgDn:
+				e.helpOffset += 10
+				return nil
+			case tcell.KeyHome:
+				e.helpOffset = 0
+				return nil
+			case tcell.KeyEnd:
+				e.helpOffset = len(e.helpLines)
+				return nil
+			}
+			return nil
+		}
 		if event.Key() == tcell.KeyCtrlC {
 			if e.mode == "editor" {
 				e.copySel()
 			}
+			return nil
+		}
+		if event.Key() == tcell.KeyF1 {
+			e.cmdHelp()
 			return nil
 		}
 		return event
@@ -489,23 +532,23 @@ func (e *Editor) makeWidgets() {
 	})
 	e.inputField.SetDoneFunc(func(key tcell.Key) {
 		switch e.inputMode {
-	case "search":
-		switch key {
-		case tcell.KeyTab:
-			e.searchNext()
-		case tcell.KeyBacktab:
-			e.searchPrev()
-		case tcell.KeyEnter:
-			e.searchQuery = ""
-			e.searchMatches = nil
-			e.searchIdx = 0
-			e.mainFlex.RemoveItem(e.inputField)
-			e.mainFlex.AddItem(e.statusBox, 1, 0, false)
-			e.inputMode = ""
-			e.app.SetFocus(e.editorBox)
-		case tcell.KeyEscape:
-			e.cancelInput()
-		}
+		case "search":
+			switch key {
+			case tcell.KeyTab:
+				e.searchNext()
+			case tcell.KeyBacktab:
+				e.searchPrev()
+			case tcell.KeyEnter:
+				e.searchQuery = ""
+				e.searchMatches = nil
+				e.searchIdx = 0
+				e.mainFlex.RemoveItem(e.inputField)
+				e.mainFlex.AddItem(e.statusBox, 1, 0, false)
+				e.inputMode = ""
+				e.app.SetFocus(e.editorBox)
+			case tcell.KeyEscape:
+				e.cancelInput()
+			}
 		default:
 			if key == tcell.KeyEnter {
 				e.submitInput()
@@ -522,6 +565,54 @@ func (e *Editor) makeWidgets() {
 			e.updateFileFilter(text)
 		}
 	})
+
+	e.helpLines = []string{
+		"  KEYBOARD SHORTCUTS",
+		"  ─────────────────────",
+		"",
+		"  EDITOR MODE",
+		"    F1           Show this help",
+		"    Ctrl+F       Search",
+		"    Ctrl+Z       Undo",
+		"    Ctrl+Y       Redo",
+		"    Ctrl+S       Save",
+		"    Ctrl+O       Open file",
+		"    Ctrl+N       New file",
+		"    Ctrl+C       Copy",
+		"    Ctrl+V       Paste",
+		"    Ctrl+X       Cut",
+		"    Ctrl+A       Select all",
+		"    Ctrl+D       Duplicate line",
+		"    Ctrl+W       Close tab",
+		"    Ctrl+B       Toggle sidebar",
+		"    Ctrl+R       Toggle dotfiles",
+		"    Ctrl+Q       Quit",
+		"    Alt+T        Cycle theme",
+		"    Alt+<-/->    Switch tabs",
+		"",
+		"  SIDEBAR MODE",
+		"    Up/Down      Navigate files",
+		"    Enter        Open file / enter directory",
+		"    Left/Right   Parent / enter directory",
+		"    Ctrl+F       Filter files",
+		"    Ctrl+R       Toggle dotfiles",
+		"    Ctrl+B       Hide sidebar",
+		"    Ctrl+S       Save current file",
+		"",
+		"  SEARCH MODE",
+		"    Tab          Next match",
+		"    Shift+Tab    Previous match",
+		"    Enter        Close search",
+		"    Escape       Cancel search",
+		"",
+		"  FILE FILTER",
+		"    Up/Down      Navigate filtered list",
+		"    Enter        Open selected file",
+		"    Escape       Cancel filter",
+		"",
+		"  ─────────────────────",
+		"  Up/Down scroll  ·  Escape close",
+	}
 
 	e.pages = tview.NewPages()
 }

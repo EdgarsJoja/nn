@@ -163,7 +163,113 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		screen.HideCursor()
 	}
 
+	if e.showHelp {
+		e.drawHelp(screen)
+		screen.HideCursor()
+		return x, y, width, height
+	}
+
 	return x, y, width, height
+}
+
+func (e *Editor) drawHelp(screen tcell.Screen) {
+	w, h := screen.Size()
+
+	margin := 4
+	boxW := w - margin*2
+	boxH := h - margin*2
+	if boxW > 64 {
+		boxW = 64
+	}
+	if boxH < 10 {
+		boxH = 10
+	}
+	boxX := (w - boxW) / 2
+	boxY := (h - boxH) / 2
+
+	topLeft, topRight, botLeft, botRight := '╭', '╮', '╰', '╯'
+	hoz, vert := '─', '│'
+
+	boxBg := colSurface0
+
+	for dy := 0; dy < boxH; dy++ {
+		for dx := 0; dx < boxW; dx++ {
+			sx := boxX + dx
+			sy := boxY + dy
+			if sx < 0 || sx >= w || sy < 0 || sy >= h {
+				continue
+			}
+			var ch rune
+			switch {
+			case dy == 0 && dx == 0:
+				ch = topLeft
+			case dy == 0 && dx == boxW-1:
+				ch = topRight
+			case dy == boxH-1 && dx == 0:
+				ch = botLeft
+			case dy == boxH-1 && dx == boxW-1:
+				ch = botRight
+			case dy == 0 || dy == boxH-1:
+				ch = hoz
+			case dx == 0 || dx == boxW-1:
+				ch = vert
+			}
+			fg := colOverlay0
+			if ch == 0 {
+				fg = colText
+			}
+			st := tcell.StyleDefault.Background(boxBg).Foreground(fg)
+			screen.SetContent(sx, sy, ch, nil, st)
+		}
+	}
+
+	maxLines := boxH - 2
+	if maxLines <= 0 {
+		return
+	}
+	scrollable := len(e.helpLines) > maxLines
+	maxOff := len(e.helpLines) - maxLines
+	if e.helpOffset > maxOff {
+		e.helpOffset = maxOff
+	}
+	if e.helpOffset < 0 {
+		e.helpOffset = 0
+	}
+
+	for i := 0; i < maxLines && i+e.helpOffset < len(e.helpLines); i++ {
+		line := e.helpLines[i+e.helpOffset]
+		sy := boxY + 1 + i
+		for cx, ch := range line {
+			sx := boxX + 1 + cx
+			if sx >= boxX+boxW-1 {
+				break
+			}
+			trim := strings.TrimSpace(line)
+			fg := colText
+			switch {
+			case trim == "KEYBOARD SHORTCUTS":
+				fg = colBlue
+			case strings.HasPrefix(line, "  ─"):
+				fg = colOverlay0
+			case strings.Contains(line, "scroll"):
+				fg = colSubtext0
+			case strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && trim != "":
+				fg = colGreen
+			}
+			st := tcell.StyleDefault.Background(colSurface0).Foreground(fg)
+			screen.SetContent(sx, sy, ch, nil, st)
+		}
+	}
+
+	if scrollable {
+		scroll := fmt.Sprintf(" %d/%d ", e.helpOffset+1, maxOff+1)
+		sx := boxX + boxW - 2 - len(scroll)
+		sy := boxY + boxH - 1
+		for cx, ch := range scroll {
+			st := tcell.StyleDefault.Background(boxBg).Foreground(colSubtext0)
+			screen.SetContent(sx+cx, sy, ch, nil, st)
+		}
+	}
 }
 
 func (e *Editor) drawStatusBar(screen tcell.Screen) {
@@ -211,7 +317,6 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 	}
 
 	rightW := len(right)
-	shortcutsW := len(shortcuts)
 	availW := w - nameX - rightW
 
 	shortcutsX := nameX
@@ -224,22 +329,30 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 			screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colText))
 		}
 		shortcutsX = nameX + len(name) + 1
-	} else {
-		shortcutsX = nameX
 	}
 
-	if shortcutsX+shortcutsW+rightW < w {
-		for cx, ch := range shortcuts {
-			sx := shortcutsX + cx
-			if sx >= w {
-				break
-			}
-			st := tcell.StyleDefault.Background(colSurface1).Foreground(colSubtext0)
-			if ch == '│' {
-				st = tcell.StyleDefault.Background(colSurface1).Foreground(colOverlay0)
-			}
-			screen.SetContent(sx, statusY, ch, nil, st)
+	maxShortcutW := (w - rightW) - shortcutsX - len(" F1 help ")
+	for cx, ch := range shortcuts {
+		if cx >= maxShortcutW {
+			break
 		}
+		sx := shortcutsX + cx
+		st := tcell.StyleDefault.Background(colSurface1).Foreground(colSubtext0)
+		if ch == '│' {
+			st = tcell.StyleDefault.Background(colSurface1).Foreground(colOverlay0)
+		}
+		screen.SetContent(sx, statusY, ch, nil, st)
+	}
+
+	helpHint := " F1 help "
+	helpX := (w - rightW) - len(helpHint)
+	for cx, ch := range helpHint {
+		sx := helpX + cx
+		st := tcell.StyleDefault.Background(colSurface1).Foreground(colGreen)
+		if ch == ' ' {
+			st = tcell.StyleDefault.Background(colSurface1).Foreground(colSurface1)
+		}
+		screen.SetContent(sx, statusY, ch, nil, st)
 	}
 
 	for cx, ch := range right {
