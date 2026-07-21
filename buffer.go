@@ -156,6 +156,52 @@ func (e *Editor) restoreTab(idx int) {
 	e.filename = t.filename
 	e.modified = t.modified
 	e.activeTab = idx
+	e.adjustTabOffset()
+}
+
+func (e *Editor) tabWidth(t *FileTab) int {
+	label := filepath.Base(t.filename)
+	if t.filename == "" {
+		label = "untitled"
+	}
+	if t.modified {
+		label += " •"
+	}
+	return len([]rune(" " + label + " ")) + 1
+}
+
+func (e *Editor) adjustTabOffset() {
+	if len(e.openFiles) == 0 {
+		e.tabOffset = 0
+		return
+	}
+
+	if e.activeTab < e.tabOffset {
+		e.tabOffset = e.activeTab
+	}
+
+	_, _, w, _ := e.editorBox.GetRect()
+	availW := w
+
+	x := 0
+	targetEnd := 0
+	for i := e.tabOffset; i < len(e.openFiles); i++ {
+		w := e.tabWidth(e.openFiles[i])
+		pos := x + w
+		if i == e.activeTab {
+			targetEnd = pos
+		}
+		x = pos
+	}
+
+	if availW < 40 {
+		availW = 40
+	}
+
+	for targetEnd > availW && e.tabOffset < e.activeTab {
+		targetEnd -= e.tabWidth(e.openFiles[e.tabOffset])
+		e.tabOffset++
+	}
 }
 
 func (e *Editor) switchTab(dir int) {

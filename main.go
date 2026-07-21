@@ -56,6 +56,7 @@ type Editor struct {
 	themeIdx  int
 	openFiles []*FileTab
 	activeTab int
+	tabOffset int
 
 	searchQuery   string
 	searchMatches []Point

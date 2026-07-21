@@ -77,7 +77,8 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		screen.SetContent(x+dx, y, ' ', nil, tcell.StyleDefault.Background(colSurface0))
 	}
 	tabsX := x
-	for i, t := range e.openFiles {
+	for i := e.tabOffset; i < len(e.openFiles); i++ {
+		t := e.openFiles[i]
 		label := filepath.Base(t.filename)
 		if t.filename == "" {
 			label = "untitled"
