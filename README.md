@@ -1,4 +1,4 @@
-# nnano
+# nn
 
 A terminal-based text editor written in Go, inspired by nano and NvChad. Arrow-key navigation,
 Ctrl+C/V/X copy-paste-cut, Shift+arrow text selection, and a toggleable sidebar for file browsing.
@@ -8,7 +8,7 @@ Built with [tview](https://github.com/rivo/tview) and [tcell](https://github.com
 ## Build
 
 ```sh
-go build -o nnano .
+go build -o nn .
 ```
 
 Requires Go 1.24+.
@@ -16,8 +16,8 @@ Requires Go 1.24+.
 ## Run
 
 ```sh
-./nnano              # start with empty buffer
-./nnano file.txt     # open existing file
+./nn              # start with empty buffer
+./nn file.txt     # open existing file
 ```
 
 ## Key Bindings

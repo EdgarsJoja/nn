@@ -329,7 +329,7 @@ func (e *Editor) Run() error {
 
 func main() {
 	log.SetFlags(0)
-	log.SetPrefix("nnano: ")
+	log.SetPrefix("nn: ")
 
 	e := &Editor{}
 	e.Init()

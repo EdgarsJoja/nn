@@ -1,4 +1,4 @@
-module nnano
+module nn
 
 go 1.25
 
