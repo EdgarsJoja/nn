@@ -5,7 +5,8 @@ description: Build and verify project that there are no compile time issues
 
 ## What to do
 
-Run project build command and check output that there are no issues
+Run project build command and check output that there are no issues.
+Let user know, that this skill was used.
 
 ## When to use
 
