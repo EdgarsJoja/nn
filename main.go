@@ -111,6 +111,8 @@ func (e *Editor) submitInput() {
 		})
 		e.restoreTab(len(e.openFiles) - 1)
 		e.refreshDir()
+		e.mode = "editor"
+		e.app.SetFocus(e.editorBox)
 		e.msg("new file: " + val)
 	case "confirm":
 		if val == "y" || val == "Y" {

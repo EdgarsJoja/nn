@@ -230,6 +230,8 @@ func (e *Editor) closeTab() {
 		e.openFiles[0].filename = ""
 		e.openFiles[0].modified = false
 		e.msg("closed tab")
+		e.mode = "sidebar"
+		e.app.SetFocus(e.sidebar)
 		return
 	}
 	e.saveCurrentTab()
