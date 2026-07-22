@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -611,32 +613,373 @@ func (e *Editor) toggleComment() {
 	e.setModified()
 }
 
-func (e *Editor) openFile(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
+func (e *Editor) scanFiles() {
+	e.fuzzyFiles = nil
+	root := e.sidebarDir
+	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if path == root {
+			return nil
+		}
+		base := d.Name()
+		if base == ".git" && d.IsDir() {
+			return filepath.SkipDir
+		}
+		if e.hideDotfiles && strings.HasPrefix(base, ".") && d.IsDir() {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if e.hideDotfiles && strings.HasPrefix(base, ".") {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		e.fuzzyFiles = append(e.fuzzyFiles, fuzzyFileInfo{
+			path:  rel,
+			lower: []rune(strings.ToLower(rel)),
+		})
+		return nil
+	})
+	sort.Slice(e.fuzzyFiles, func(i, j int) bool {
+		return e.fuzzyFiles[i].path < e.fuzzyFiles[j].path
+	})
+}
+
+var depDirs = []string{
+	"/vendor/", "/node_modules/", "/.git/", "/__pycache__/",
+	"/.venv/", "/venv/", "/.tox/", "/env/",
+	"/target/", "/build/", "/dist/", "/.next/",
+	"/bower_components/", "/jspm_packages/", "/.dub/",
+}
+
+func isDepDir(path string) bool {
+	lower := strings.ToLower(path)
+	for _, d := range depDirs {
+		if strings.Contains(lower, d) {
+			return true
+		}
+		trimmed := strings.TrimPrefix(d, "/")
+		if strings.HasPrefix(lower, trimmed) {
+			return true
+		}
 	}
-	content := string(data)
-	lines := strings.Split(content, "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
+	return false
+}
+
+type fuzzyFileInfo struct {
+	path  string
+	lower []rune
+}
+
+type fuzzyResult struct {
+	path    string
+	score   int
+	matches []int
+	fileIdx int
+}
+
+func fuzzyScoreRunes(q []rune, t []rune, path string) (int, []int, bool) {
+	if len(q) == 0 {
+		return 0, nil, true
 	}
-	if len(lines) == 0 {
-		lines = []string{""}
+
+	bestScore := -1
+	var bestMatches []int
+
+	for start := 0; start < len(t); start++ {
+		if t[start] != q[0] {
+			continue
+		}
+		score, match := matchFrom(q, t, start)
+		if score < 0 {
+			continue
+		}
+		score, match = optimizeMatches(q, t, match)
+		if score > bestScore {
+			bestScore = score
+			bestMatches = match
+		}
 	}
-	tab := &FileTab{
-		filename:     filepath.Base(path),
-		filepath:     path,
-		buffer:       lines,
-		cursor:       Point{},
-		offset:       Point{},
-		syntaxTokens: nil,
+	if bestScore < 0 {
+		return 0, nil, false
 	}
-	e.openFiles = append(e.openFiles, tab)
-	e.activeTab = len(e.openFiles) - 1
-	e.undoStack = nil
-	e.redoStack = nil
-	e.restoreTab(e.activeTab)
-	e.refreshGit()
-	return nil
+	depth := 0
+	for _, c := range path {
+		if c == '/' {
+			depth++
+		}
+	}
+	bestScore -= depth * 10
+	if isDepDir(path) {
+		bestScore -= 100
+	}
+	return bestScore, bestMatches, true
+}
+
+func optimizeMatches(q, t []rune, m []int) (int, []int) {
+	improved := true
+	for improved {
+		improved = false
+		for i := len(m) - 1; i >= 0; i-- {
+			qi := i
+			cur := m[i]
+			nextBound := len(t)
+			if i+1 < len(m) {
+				nextBound = m[i+1]
+			}
+			// Look for a later occurrence of q[qi] between cur+1 and nextBound
+			bestShift := -1
+			for try := cur + 1; try < nextBound; try++ {
+				if t[try] == q[qi] {
+					bestShift = try
+					break
+				}
+			}
+			if bestShift < 0 {
+				continue
+			}
+			oldScore := scoreMatches(q, t, m)
+			m[i] = bestShift
+			newScore := scoreMatches(q, t, m)
+			if newScore > oldScore {
+				improved = true
+			} else {
+				m[i] = cur
+			}
+		}
+	}
+	return scoreMatches(q, t, m), m
+}
+
+func scoreMatches(q, t []rune, m []int) int {
+	score := 0
+	prevMatch := -2
+	gap := 0
+	for _, ti := range m {
+		if ti == prevMatch+1 {
+			score += 5
+		} else {
+			score += 1
+		}
+		if prevMatch >= 0 && ti > prevMatch+1 {
+			gap += ti - prevMatch - 1
+		}
+		if ti > 0 && t[ti-1] == '/' {
+			score += 3
+		}
+		prevMatch = ti
+	}
+	return score - gap
+}
+
+func matchFrom(q, t []rune, start int) (int, []int) {
+	qi := 0
+	score := 0
+	prevMatch := -2
+	lastMatch := -1
+	gapPenalty := 0
+	var m []int
+	for ti := start; ti < len(t) && qi < len(q); ti++ {
+		if t[ti] == q[qi] {
+			if ti == prevMatch+1 {
+				score += 5
+			} else {
+				score += 1
+			}
+			if lastMatch >= 0 && ti > lastMatch+1 {
+				gapPenalty += ti - lastMatch - 1
+			}
+			if ti > 0 && t[ti-1] == '/' {
+				score += 3
+			}
+			prevMatch = ti
+			lastMatch = ti
+			m = append(m, ti)
+			qi++
+		}
+	}
+	if qi != len(q) {
+		return -1, nil
+	}
+	score -= gapPenalty
+	return score, m
+}
+
+func (e *Editor) cmdFuzzyFinder() {
+	e.scanFiles()
+	e.fuzzyResults = make([]fuzzyResult, len(e.fuzzyFiles))
+	for i, f := range e.fuzzyFiles {
+		e.fuzzyResults[i] = fuzzyResult{path: f.path, fileIdx: i}
+	}
+	e.fuzzyIdx = 0
+	e.fuzzyOff = 0
+	e.fuzzyQuery = ""
+	e.showFuzzy = true
+	if len(e.fuzzyFiles) == 0 {
+		e.msg("fuzzy: no files found")
+	} else {
+		names := ""
+		for i := 0; i < len(e.fuzzyFiles) && i < 3; i++ {
+			if i > 0 {
+				names += " "
+			}
+			names += e.fuzzyFiles[i].path
+		}
+		e.msg("fuzzy: " + strconv.Itoa(len(e.fuzzyFiles)) + " files (" + names + ")")
+	}
+}
+
+func (e *Editor) fuzzyCancel() {
+	e.showFuzzy = false
+	e.fuzzyResults = nil
+	e.fuzzyFiles = nil
+	e.fuzzyQuery = ""
+	e.fuzzyPrevQuery = ""
+	e.fuzzyPrevCandidates = nil
+	e.msg("")
+}
+
+func (e *Editor) updateFuzzy(query string) {
+	if query == "" {
+		e.fuzzyResults = make([]fuzzyResult, len(e.fuzzyFiles))
+		for i, f := range e.fuzzyFiles {
+			e.fuzzyResults[i] = fuzzyResult{path: f.path, fileIdx: i}
+		}
+		e.fuzzyIdx = 0
+		e.fuzzyOff = 0
+		e.fuzzyPrevQuery = ""
+		e.fuzzyPrevCandidates = nil
+		e.msg("fuzzy: " + strconv.Itoa(len(e.fuzzyFiles)) + " files")
+		return
+	}
+
+	isExtending := strings.HasPrefix(query, e.fuzzyPrevQuery) && e.fuzzyPrevQuery != ""
+	e.fuzzyPrevQuery = query
+
+	const maxResults = 200
+	q := []rune(strings.ToLower(query))
+	var results []fuzzyResult
+	minScore := -1
+
+	tryAdd := func(idx int) bool {
+		fi := e.fuzzyFiles[idx]
+		s, m, ok := fuzzyScoreRunes(q, fi.lower, fi.path)
+		if !ok {
+			return false
+		}
+		if !(len(results) >= maxResults && s < minScore) {
+			pos := sort.Search(len(results), func(i int) bool {
+				if results[i].score != s {
+					return results[i].score < s
+				}
+				return results[i].path >= fi.path
+			})
+			n := len(results)
+			results = append(results, fuzzyResult{})
+			if pos < n {
+				copy(results[pos+1:], results[pos:n])
+			}
+			results[pos] = fuzzyResult{path: fi.path, score: s, matches: m, fileIdx: idx}
+			if len(results) > maxResults {
+				results = results[:maxResults]
+			}
+			if len(results) >= maxResults {
+				minScore = results[maxResults-1].score
+			}
+		}
+		return true
+	}
+
+	if isExtending && len(e.fuzzyPrevCandidates) > 0 && len(e.fuzzyPrevCandidates) < 3000 {
+		matched := make([]int, 0, len(e.fuzzyPrevCandidates))
+		for _, idx := range e.fuzzyPrevCandidates {
+			if tryAdd(idx) {
+				matched = append(matched, idx)
+			}
+		}
+		e.fuzzyPrevCandidates = matched
+	} else {
+		matched := make([]int, 0, len(e.fuzzyFiles))
+		for idx := range e.fuzzyFiles {
+			if tryAdd(idx) {
+				matched = append(matched, idx)
+			}
+		}
+		e.fuzzyPrevCandidates = matched
+	}
+
+	e.fuzzyResults = results
+	if e.fuzzyIdx >= len(e.fuzzyResults) {
+		e.fuzzyIdx = 0
+	}
+	e.fuzzyOff = 0
+	e.msg("fuzzy: " + strconv.Itoa(len(e.fuzzyResults)) + " matches for \"" + query + "\"")
+}
+
+func (e *Editor) fuzzyOpen() {
+	if len(e.fuzzyResults) == 0 {
+		e.msg("fuzzy: no matches to open")
+		return
+	}
+	path := filepath.Join(e.sidebarDir, e.fuzzyResults[e.fuzzyIdx].path)
+	e.fuzzyCancel()
+	e.mode = "editor"
+	e.app.SetFocus(e.editorBox)
+	e.loadFile(path)	
+}
+
+func (e *Editor) fuzzyUp() {
+	if e.fuzzyIdx > 0 {
+		e.fuzzyIdx--
+	}
+	if e.fuzzyIdx < e.fuzzyOff {
+		e.fuzzyOff = e.fuzzyIdx
+	}
+}
+
+func (e *Editor) fuzzyDown() {
+	if e.fuzzyIdx < len(e.fuzzyResults)-1 {
+		e.fuzzyIdx++
+	}
+	maxResults := 12
+	if e.fuzzyIdx >= e.fuzzyOff+maxResults {
+		e.fuzzyOff = e.fuzzyIdx - maxResults + 1
+	}
+}
+
+func (e *Editor) fuzzyPgUp() {
+	maxResults := 12
+	e.fuzzyIdx -= maxResults
+	if e.fuzzyIdx < 0 {
+		e.fuzzyIdx = 0
+	}
+	e.fuzzyOff = e.fuzzyIdx
+}
+
+func (e *Editor) fuzzyPgDn() {
+	maxResults := 12
+	last := len(e.fuzzyResults) - 1
+	e.fuzzyIdx += maxResults
+	if e.fuzzyIdx > last {
+		e.fuzzyIdx = last
+	}
+	if e.fuzzyIdx >= e.fuzzyOff+maxResults {
+		e.fuzzyOff = e.fuzzyIdx - maxResults + 1
+	}
+}
+
+func (e *Editor) fuzzyHome() {
+	e.fuzzyIdx = 0
+	e.fuzzyOff = 0
+}
+
+func (e *Editor) fuzzyEnd() {
+	e.fuzzyIdx = len(e.fuzzyResults) - 1
+	maxResults := 12
+	if e.fuzzyIdx >= e.fuzzyOff+maxResults {
+		e.fuzzyOff = e.fuzzyIdx - maxResults + 1
+	}
 }

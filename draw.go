@@ -206,7 +206,7 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		}
 	}
 
-	if e.mode == "editor" {
+	if e.mode == "editor" && e.cursor.Y >= 0 && e.cursor.Y < len(e.buffer) {
 		line := []rune(e.buffer[e.cursor.Y])
 		cx := editX + gutterW + bufToDisp(line, e.cursor.X) - bufToDisp(line, e.offset.X)
 		cy := contentY + e.cursor.Y - e.offset.Y
@@ -221,6 +221,11 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		e.drawHelp(screen)
 		screen.HideCursor()
 		return x, y, width, height
+	}
+
+	if e.showFuzzy {
+		screen.HideCursor()
+		e.drawFuzzyFinder(screen)
 	}
 
 	return x, y, width, height
@@ -493,4 +498,149 @@ func dispToBuf(line []rune, dispX int) int {
 		}
 	}
 	return len(line)
+}
+
+func (e *Editor) drawFuzzyFinder(screen tcell.Screen) {
+	w, h := screen.Size()
+
+	maxResults := 12
+	count := len(e.fuzzyResults)
+	if count > maxResults {
+		count = maxResults
+	}
+	boxW := w - 4
+	if boxW < 20 {
+		boxW = 20
+	}
+	boxH := count + 3
+	if boxH < 4 {
+		boxH = 4
+	}
+	boxX := (w - boxW) / 2
+	boxY := h - boxH - 2
+
+	if boxY < 0 {
+		boxY = 0
+	}
+
+	for dy := 0; dy < boxH; dy++ {
+		for dx := 0; dx < boxW; dx++ {
+			sx := boxX + dx
+			sy := boxY + dy
+			if sx < 0 || sx >= w || sy < 0 || sy >= h {
+				continue
+			}
+			ch := ' '
+			fg := colText
+			bg := colSurface0
+			switch {
+			case dy == 0 && dx == 0:
+				ch = '╭'
+				fg = colOverlay0
+			case dy == 0 && dx == boxW-1:
+				ch = '╮'
+				fg = colOverlay0
+			case dy == boxH-1 && dx == 0:
+				ch = '╰'
+				fg = colOverlay0
+			case dy == boxH-1 && dx == boxW-1:
+				ch = '╯'
+				fg = colOverlay0
+			case dy == 0 || dy == boxH-1:
+				ch = '─'
+				fg = colOverlay0
+			case dx == 0 || dx == boxW-1:
+				ch = '│'
+				fg = colOverlay0
+			}
+			screen.SetContent(sx, sy, ch, nil, tcell.StyleDefault.Background(bg).Foreground(fg))
+		}
+	}
+
+	// Query line at dy=1
+	query := "> " + e.fuzzyQuery
+	if len(query) > boxW-2 {
+		query = query[:boxW-2]
+	}
+	query += strings.Repeat(" ", boxW-2-len(query))
+	qy := boxY + 1
+	for dx, ch := range query {
+		screen.SetContent(boxX+1+dx, qy, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(colGreen))
+	}
+
+	// Results start at dy=2
+	maxPathLen := boxW - 4
+	start := e.fuzzyOff
+	resultRows := 0
+	for i := 0; i < maxResults && i+start < len(e.fuzzyResults); i++ {
+		r := e.fuzzyResults[i+start]
+		path := r.path
+		truncOffset := 0
+		visiblePath := path
+		if len(path) > maxPathLen {
+			keepLen := maxPathLen - 3
+			truncOffset = len(path) - keepLen
+			visiblePath = "..." + path[truncOffset:]
+		}
+
+		sy := boxY + 2 + i
+		isSel := (i + start) == e.fuzzyIdx
+
+		// Build match lookup for this path
+		isMatch := make(map[int]bool)
+		for _, mi := range r.matches {
+			isMatch[mi] = true
+		}
+
+		// Draw character by character
+		muted := colOverlay0
+		highlightFg := colText
+		bg := colSurface0
+		if isSel {
+			bg = colBlue
+			highlightFg = colBase
+		}
+		dx := 0
+		skipDots := 0
+		if truncOffset > 0 {
+			skipDots = 3
+		}
+		for _, ch := range visiblePath {
+			fg := muted
+			if dx >= skipDots {
+				origIdx := truncOffset + dx - skipDots
+				if isMatch[origIdx] {
+					fg = highlightFg
+				}
+			}
+			if dx < boxW-2 {
+				screen.SetContent(boxX+1+dx, sy, ch, nil, tcell.StyleDefault.Background(bg).Foreground(fg))
+			}
+			dx++
+		}
+		// Pad with spaces
+		for dx < boxW-2 {
+			screen.SetContent(boxX+1+dx, sy, ' ', nil, tcell.StyleDefault.Background(bg))
+			dx++
+		}
+		resultRows++
+	}
+
+	// Scroll indicator on right border
+	total := len(e.fuzzyResults)
+	if total > resultRows {
+		contentH := boxH - 3
+		if contentH > 0 {
+			scrollable := total - resultRows
+			thumbPos := 0
+			if scrollable > 0 {
+				thumbPos = (e.fuzzyOff * contentH) / scrollable
+			}
+			if thumbPos >= contentH {
+				thumbPos = contentH - 1
+			}
+			sy := boxY + 2 + thumbPos
+			screen.SetContent(boxX+boxW-1, sy, '▓', nil, tcell.StyleDefault.Background(colSurface0).Foreground(colOverlay0))
+		}
+	}
 }

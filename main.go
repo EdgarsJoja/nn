@@ -71,6 +71,15 @@ type Editor struct {
 
 	gitDirty          bool
 	tokenizeDebounce  int
+
+	fuzzyResults []fuzzyResult
+	fuzzyIdx     int
+	fuzzyOff     int
+	showFuzzy    bool
+	fuzzyFiles   []fuzzyFileInfo
+	fuzzyQuery   string
+	fuzzyPrevQuery string
+	fuzzyPrevCandidates []int
 }
 
 func (e *Editor) msg(text string) {
@@ -463,6 +472,45 @@ func (e *Editor) Init() {
 	e.app = tview.NewApplication()
 	e.app.EnableMouse(true)
 	e.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if e.showFuzzy {
+			switch event.Key() {
+			case tcell.KeyRune:
+				e.fuzzyQuery += string(event.Rune())
+				e.updateFuzzy(e.fuzzyQuery)
+				return nil
+			case tcell.KeyBackspace, tcell.KeyBackspace2:
+				if len(e.fuzzyQuery) > 0 {
+					e.fuzzyQuery = e.fuzzyQuery[:len(e.fuzzyQuery)-1]
+				}
+				e.updateFuzzy(e.fuzzyQuery)
+				return nil
+			case tcell.KeyEnter:
+				e.fuzzyOpen()
+				return nil
+			case tcell.KeyEscape:
+				e.fuzzyCancel()
+				return nil
+			case tcell.KeyUp:
+				e.fuzzyUp()
+				return nil
+			case tcell.KeyDown:
+				e.fuzzyDown()
+				return nil
+			case tcell.KeyPgUp:
+				e.fuzzyPgUp()
+				return nil
+			case tcell.KeyPgDn:
+				e.fuzzyPgDn()
+				return nil
+			case tcell.KeyHome:
+				e.fuzzyHome()
+				return nil
+			case tcell.KeyEnd:
+				e.fuzzyEnd()
+				return nil
+			}
+			return nil
+		}
 		if e.showHelp {
 			switch event.Key() {
 			case tcell.KeyEscape, tcell.KeyF1:
@@ -610,53 +658,56 @@ func (e *Editor) makeWidgets() {
 
 	e.helpLines = []string{
 		"  KEYBOARD SHORTCUTS",
-		"  ─────────────────────",
+		"  ─────────────────────────",
+		"",
+		"  GLOBAL",
+		"    F1                     Show this help",
+		"    Ctrl+P                 Fuzzy file finder",
+		"    Ctrl+S                 Save file",
+		"    Ctrl+N                 New file",
+		"    Ctrl+B                 Toggle sidebar",
+		"    Ctrl+R                 Toggle dotfiles",
+		"    Ctrl+Q                 Quit",
+		"    Alt+T                  Cycle theme",
+		"    Alt+Left / Right       Switch tabs",
+		"    Shift+Alt+Left/Right   Resize sidebar",
 		"",
 		"  EDITOR MODE",
-		"    F1                  Show this help",
-		"    Ctrl+F              Search",
-		"    Ctrl+Z              Undo",
-		"    Ctrl+Y              Redo",
-		"    Ctrl+S              Save",
-		"    Ctrl+O              Open file",
-		"    Ctrl+N              New file",
-		"    Ctrl+C              Copy",
-		"    Ctrl+V              Paste",
-		"    Ctrl+X              Cut",
-		"    Ctrl+A              Select all",
-		"    Ctrl+D              Duplicate line",
-		"    Ctrl+/              Toggle comment",
-		"    Tab (sel)           Indent selection",
-		"    Shift+Tab           Unindent",
-		"    Ctrl+W              Close tab",
-		"    Ctrl+B              Toggle sidebar",
-		"    Ctrl+R              Toggle dotfiles",
-		"    Ctrl+Q              Quit",
-		"    Alt+T               Cycle theme",
-		"    Alt+<-/->           Switch tabs",
-		"    Shift+Alt+<-/->     Resize sidebar",
+		"    Ctrl+F                 Search",
+		"    Ctrl+Z / Ctrl+Y        Undo / Redo",
+		"    Ctrl+O                 Open file",
+		"    Ctrl+C / V / X         Copy / Paste / Cut",
+		"    Ctrl+A                 Select all",
+		"    Ctrl+D                 Duplicate line",
+		"    Ctrl+/                 Toggle comment",
+		"    Ctrl+W                 Close tab",
+		"    Up / Down / Left/Right Move cursor",
+		"    Shift+Arrow            Extend selection",
+		"    Ctrl+Left / Right      Word jump",
+		"    Home / End             Line start / end",
+		"    PgUp / PgDn            Scroll page",
+		"    Enter                  Newline",
+		"    Backspace              Delete backward",
+		"    Delete / Shift+Del     Delete forward / line",
+		"    Tab / Shift+Tab        Indent / Unindent",
+		"    Escape                 Clear selection",
 		"",
 		"  SIDEBAR MODE",
-		"    Up/Down      Navigate files",
-		"    Enter        Open file / enter directory",
-		"    Left/Right   Parent / enter directory",
-		"    Ctrl+F       Filter files",
-		"    Ctrl+R       Toggle dotfiles",
-		"    Ctrl+B       Hide sidebar",
-		"    Ctrl+S       Save current file",
+		"    Up / Down              Navigate files",
+		"    Enter                  Open file / directory",
+		"    Left / Right           Parent / enter dir",
+		"    Ctrl+F                 Filter files",
+		"    Delete                 Delete file",
+		"    Escape                 Clear filter / focus editor",
+		"    Tab                    Focus editor",
+		"    Home / End / PgUp/Dn   Navigate list",
 		"",
-		"  SEARCH MODE",
-		"    Tab          Next match",
-		"    Shift+Tab    Previous match",
-		"    Enter        Close search",
-		"    Escape       Cancel search",
+		"  SEARCH / FILTER MODE",
+		"    Tab / Shift+Tab        Next / Previous match",
+		"    Enter                  Confirm",
+		"    Escape                 Cancel",
 		"",
-		"  FILE FILTER",
-		"    Up/Down      Navigate filtered list",
-		"    Enter        Open selected file",
-		"    Escape       Cancel filter",
-		"",
-		"  ─────────────────────",
+		"  ─────────────────────────",
 		"  Up/Down scroll  ·  Escape close",
 	}
 

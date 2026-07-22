@@ -1,8 +1,8 @@
 # nn
 
 A terminal-based text editor written in Go, inspired by nano. Arrow-key navigation,
-clipboard operations, syntax highlighting, search, undo/redo, file sidebar, git
-integration, and multi-theme support.
+clipboard operations, syntax highlighting, search, undo/redo, fuzzy file finder,
+file sidebar, git integration, and multi-theme support.
 
 Built with [tview](https://github.com/rivo/tview) and [tcell](https://github.com/gdamore/tcell).
 
@@ -23,58 +23,58 @@ Requires Go 1.24+.
 
 ## Key Bindings
 
-### Editor mode
+### Global (editor + sidebar)
 
 | Key | Action |
 |---|---|
 | `F1` | Open help popup |
-| `Ctrl+F` | Search (Tab/Shift+Tab to cycle matches) |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
+| `Ctrl+P` | Fuzzy file finder |
 | `Ctrl+S` | Save file |
-| `Ctrl+O` | Open file |
 | `Ctrl+N` | New file |
-| `Ctrl+C` | Copy selection |
-| `Ctrl+V` | Paste |
-| `Ctrl+X` | Cut selection |
-| `Ctrl+A` | Select all |
-| `Ctrl+D` | Duplicate line |
-| `Ctrl+W` | Close tab |
-| `Ctrl+B` | Toggle / focus sidebar |
+| `Ctrl+B` | Toggle / hide sidebar |
+| `Ctrl+R` | Toggle hidden files in sidebar |
 | `Ctrl+Q` | Quit |
 | `Alt+T` | Cycle theme |
 | `Alt+← / →` | Switch tabs |
 | `Shift+Alt+← / →` | Resize sidebar |
+
+### Editor mode
+
+| Key | Action |
+|---|---|
+| `Ctrl+F` | Search (Tab/Shift+Tab to cycle matches) |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
+| `Ctrl+O` | Open file |
+| `Ctrl+C` / `V` / `X` | Copy / Paste / Cut |
+| `Ctrl+A` | Select all |
+| `Ctrl+D` | Duplicate line |
+| `Ctrl+/` | Toggle comment |
+| `Ctrl+W` | Close tab |
 | `↑ ↓ ← →` | Move cursor |
 | `Shift+↑ ↓ ← →` | Extend selection |
 | `Ctrl+← / →` | Word jump |
 | `Home` / `End` | Start / end of line |
-| `Shift+Home` / `Shift+End` | Select to line start/end |
 | `Page Up` / `Page Down` | Scroll page |
 | `Enter` | Newline |
 | `Backspace` | Delete backward |
-| `Delete` | Delete forward |
-| `Shift+Delete` | Delete line |
-| `Tab` | Insert tab |
+| `Delete` / `Shift+Delete` | Delete forward / delete line |
+| `Tab` / `Shift+Tab` | Indent / unindent (selection) |
 | `Escape` | Clear selection |
 
 ### File sidebar
 
 | Key | Action |
 |---|---|
-| `Ctrl+F` | Filter files by name |
-| `Ctrl+N` | New file |
-| `Ctrl+R` | Toggle hidden files |
 | `↑` / `↓` | Navigate files |
+| `Enter` | Open file / enter directory |
 | `←` | Go to parent directory |
 | `→` | Enter directory |
-| `Home` / `End` | Jump to first / last entry |
-| `Page Up` / `Page Down` | Scroll page |
-| `Enter` | Open file / enter directory |
-| `Delete` | Delete selected file or directory (with confirmation) |
+| `Ctrl+F` | Filter files by name |
+| `Delete` | Delete selected file (with confirmation) |
 | `Escape` | Clear filter / switch to editor |
-| `Tab` / `Ctrl+B` | Switch to editor |
-| `Alt+← / →` | Switch tabs |
-| `Shift+Alt+← / →` | Resize sidebar |
+| `Tab` | Switch to editor |
+| `Home` / `End` | First / last entry |
+| `Page Up` / `Page Down` | Scroll page |
 
 ### Search mode (Ctrl+F in editor)
 
@@ -91,6 +91,17 @@ Requires Go 1.24+.
 | `↑` / `↓` | Navigate filtered list |
 | `Enter` | Open selected file |
 | `Escape` | Cancel filter |
+
+## Fuzzy File Finder (Ctrl+P)
+
+Opens a searchable overlay to quickly jump to any file in the project tree.
+- Start typing to filter files by name
+- `↑` / `↓` to navigate results
+- `Enter` to open the selected file
+- `Escape` to cancel
+
+Fuzzy matching scores files by consecutive character matches and word boundaries,
+with depth and dependency-directory penalties. Results are ranked and capped at 200.
 
 ## Syntax Highlighting
 
@@ -109,7 +120,7 @@ Available themes: Catppuccin Mocha, Catppuccin Latte, Tokyo Night,
 Tokyo Night Day, Dracula, One Dark, Ayu Light, Gruvbox Dark.
 
 Theme, dotfiles preference, and sidebar width are persisted to
-`~/.config/nn/settings.json`.
+`~/.config/nn/settings.json` on quit.
 
 ## Settings
 
@@ -124,7 +135,7 @@ Persisted to `~/.config/nn/settings.json`:
 - File tree navigation with arrow keys and Enter
 - Filter files by name with `Ctrl+F`
 - Directory position memory (remembers your scroll position per directory)
-- Delete files/directories with `Delete` (with confirmation prompt)
+- Delete files with `Delete` (with confirmation prompt)
 - Toggle hidden files with `Ctrl+R` (hidden by default)
 - Resize with `Shift+Alt+← / →` (clamped 15–60)
 

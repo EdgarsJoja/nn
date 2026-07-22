@@ -13,6 +13,10 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	hasCtrl := mod&tcell.ModCtrl != 0
 	hasAlt := mod&tcell.ModAlt != 0
 
+	if e.showFuzzy {
+		return event
+	}
+
 	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 && (event.Rune() == 't' || event.Rune() == 'T') {
 		e.cycleTheme()
 		return nil
@@ -61,6 +65,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyCtrlF:
 		e.cmdSearch()
+		return nil
+	case tcell.KeyCtrlP:
+		e.cmdFuzzyFinder()
 		return nil
 	case tcell.KeyF1:
 		e.cmdHelp()
@@ -338,6 +345,11 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyCtrlQ:
 		e.app.Stop()
 		e.running = false
+		return nil
+	case tcell.KeyCtrlP:
+		e.cmdFuzzyFinder()
+		e.mode = "editor"
+		e.app.SetFocus(e.editorBox)
 		return nil
 	case tcell.KeyCtrlF:
 		e.showInput("filesearch", "filter: ")
