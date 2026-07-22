@@ -92,6 +92,11 @@ type Editor struct {
 	textSearchFiles   []string
 	textSearchCache   map[string][]string
 	textSearchTimer   *time.Timer
+
+	showThemePicker   bool
+	themePickerIdx    int
+	themePickerOff    int
+	themePickerPrevIdx int
 }
 
 func (e *Editor) msg(text string) {
@@ -308,6 +313,98 @@ func (e *Editor) textSearchRowCount() int {
 		n = 1
 	}
 	return n
+}
+
+func (e *Editor) textSearchLeft() {
+	if e.textSearchHOff > 0 {
+		e.textSearchHOff -= 8
+		if e.textSearchHOff < 0 {
+			e.textSearchHOff = 0
+		}
+	}
+}
+
+func (e *Editor) textSearchRight() {
+	if e.textSearchIdx >= 0 && e.textSearchIdx < len(e.textSearchResults) {
+		lineLen := len([]rune(e.textSearchResults[e.textSearchIdx].line))
+		_, _, w, _ := e.editorBox.GetRect()
+		boxW := w - 4
+		if boxW < 40 {
+			boxW = 40
+		}
+		innerW := boxW - 4
+		if lineLen > innerW && e.textSearchHOff < lineLen-innerW {
+			e.textSearchHOff += 8
+			if e.textSearchHOff > lineLen-innerW {
+				e.textSearchHOff = lineLen - innerW
+			}
+		}
+	}
+}
+
+func (e *Editor) cmdThemePicker() {
+	e.restoreStatusBar()
+	e.themePickerIdx = e.themeIdx
+	e.themePickerOff = 0
+	e.themePickerPrevIdx = e.themeIdx
+	e.showThemePicker = true
+	e.mode = "editor"
+	e.app.SetFocus(e.editorBox)
+}
+
+func (e *Editor) themePickerUp() {
+	if e.themePickerIdx > 0 {
+		e.themePickerIdx--
+	}
+	if e.themePickerIdx < e.themePickerOff {
+		e.themePickerOff = e.themePickerIdx
+	}
+	e.applyThemePreview()
+}
+
+func (e *Editor) themePickerDown() {
+	if e.themePickerIdx < len(themes)-1 {
+		e.themePickerIdx++
+	}
+	rows := e.themePickerRowCount()
+	if e.themePickerIdx >= e.themePickerOff+rows {
+		e.themePickerOff = e.themePickerIdx - rows + 1
+	}
+	e.applyThemePreview()
+}
+
+func (e *Editor) themePickerRowCount() int {
+	_, _, _, h := e.editorBox.GetRect()
+	rows := h - 6
+	if rows < 3 {
+		rows = 3
+	}
+	return rows
+}
+
+func (e *Editor) applyThemePreview() {
+	applyTheme(themes[e.themePickerIdx])
+	e.editorBox.SetBackgroundColor(colBase)
+	e.sidebar.SetBackgroundColor(colMantle)
+	e.statusBox.SetBackgroundColor(colSurface1)
+	e.inputField.SetFieldBackgroundColor(colSurface0)
+}
+
+func (e *Editor) themePickerConfirm() {
+	e.themeIdx = e.themePickerIdx
+	e.showThemePicker = false
+	e.saveSettings()
+	e.msg("theme: " + themes[e.themeIdx].Name)
+}
+
+func (e *Editor) themePickerCancel() {
+	applyTheme(themes[e.themePickerPrevIdx])
+	e.editorBox.SetBackgroundColor(colBase)
+	e.sidebar.SetBackgroundColor(colMantle)
+	e.statusBox.SetBackgroundColor(colSurface1)
+	e.inputField.SetFieldBackgroundColor(colSurface0)
+	e.showThemePicker = false
+	e.themeIdx = e.themePickerPrevIdx
 }
 
 func (e *Editor) debounceTextSearch() {
@@ -708,6 +805,23 @@ func (e *Editor) Init() {
 			}
 			return nil
 		}
+		if e.showThemePicker {
+			switch event.Key() {
+			case tcell.KeyUp:
+				e.themePickerUp()
+				return nil
+			case tcell.KeyDown:
+				e.themePickerDown()
+				return nil
+			case tcell.KeyEnter:
+				e.themePickerConfirm()
+				return nil
+			case tcell.KeyEscape:
+				e.themePickerCancel()
+				return nil
+			}
+			return nil
+		}
 		if e.showHelp {
 			switch event.Key() {
 			case tcell.KeyEscape, tcell.KeyF1:
@@ -867,13 +981,13 @@ func (e *Editor) makeWidgets() {
 		"  GLOBAL",
 		"    F1                     Show this help",
 		"    Ctrl+P                 Fuzzy file finder",
-		"    Ctrl+K / Ctrl+Shift+F   Text search across files",
+		"    Ctrl+K / Ctrl+Shift+F  Text search across files",
 		"    Ctrl+S                 Save file",
 		"    Ctrl+N                 New file",
 		"    Ctrl+B                 Toggle sidebar",
 		"    Ctrl+R                 Toggle dotfiles",
 		"    Ctrl+Q                 Quit",
-		"    Alt+T                  Cycle theme",
+		"    Alt+T                  Theme picker",
 		"    Alt+Left / Right       Switch tabs",
 		"    Shift+Alt+Left/Right   Resize sidebar",
 		"",

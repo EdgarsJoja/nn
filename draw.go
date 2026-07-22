@@ -233,6 +233,11 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		e.drawTextSearch(screen)
 	}
 
+	if e.showThemePicker {
+		screen.HideCursor()
+		e.drawThemePicker(screen)
+	}
+
 	return x, y, width, height
 }
 
@@ -869,5 +874,126 @@ func (e *Editor) drawTextSearch(screen tcell.Screen) {
 		}
 		sy := boxY + 2 + thumbPos
 		screen.SetContent(boxX+boxW-1, sy, '▓', nil, tcell.StyleDefault.Background(colSurface0).Foreground(colOverlay0))
+	}
+}
+
+func (e *Editor) drawThemePicker(screen tcell.Screen) {
+	w, h := screen.Size()
+
+	listH := len(themes)
+	rows := e.themePickerRowCount()
+	if rows > listH {
+		rows = listH
+	}
+	boxH := rows + 4
+	if boxH > h-2 {
+		boxH = h - 2
+	}
+	boxW := 40
+	if boxW > w-4 {
+		boxW = w - 4
+	}
+	boxX := (w - boxW) / 2
+	boxY := (h - boxH) / 2
+
+	if e.themePickerIdx < e.themePickerOff {
+		e.themePickerOff = e.themePickerIdx
+	}
+	if e.themePickerIdx >= e.themePickerOff+rows && rows > 0 {
+		e.themePickerOff = e.themePickerIdx - rows + 1
+	}
+
+	for dy := 0; dy < boxH; dy++ {
+		for dx := 0; dx < boxW; dx++ {
+			sx := boxX + dx
+			sy := boxY + dy
+			if sx < 0 || sx >= w || sy < 0 || sy >= h {
+				continue
+			}
+			ch := ' '
+			fg := colText
+			bg := colSurface0
+			switch {
+			case dy == 0 && dx == 0:
+				ch = '╭'
+				fg = colOverlay0
+			case dy == 0 && dx == boxW-1:
+				ch = '╮'
+				fg = colOverlay0
+			case dy == boxH-1 && dx == 0:
+				ch = '╰'
+				fg = colOverlay0
+			case dy == boxH-1 && dx == boxW-1:
+				ch = '╯'
+				fg = colOverlay0
+			case dy == 0 || dy == boxH-1:
+				ch = '─'
+				fg = colOverlay0
+			case dx == 0 || dx == boxW-1:
+				ch = '│'
+				fg = colOverlay0
+			}
+			screen.SetContent(sx, sy, ch, nil, tcell.StyleDefault.Background(bg).Foreground(fg))
+		}
+	}
+
+	title := " Themes "
+	titleRunes := []rune(title)
+	for dx, ch := range titleRunes {
+		screen.SetContent(boxX+1+dx, boxY+1, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(colBlue))
+	}
+
+	contentW := boxW - 2
+	for i := 0; i < rows && i+e.themePickerOff < len(themes); i++ {
+		idx := i + e.themePickerOff
+		name := themes[idx].Name
+		sy := boxY + 2 + i
+
+		if idx == e.themePickerIdx {
+			for dx := 0; dx < contentW; dx++ {
+				ch := ' '
+				fg := colBase
+				if dx < len(name) {
+					ch = rune(name[dx])
+				}
+				screen.SetContent(boxX+1+dx, sy, ch, nil, tcell.StyleDefault.Background(colBlue).Foreground(fg))
+			}
+		} else {
+			for dx := 0; dx < contentW; dx++ {
+				ch := ' '
+				fg := colText
+				if dx < len(name) {
+					ch = rune(name[dx])
+				}
+				screen.SetContent(boxX+1+dx, sy, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(fg))
+			}
+		}
+	}
+
+	total := len(themes)
+	if total > rows {
+		contentHInner := boxH - 4
+		scrollable := total - rows
+		thumbPos := 0
+		if scrollable > 0 {
+			thumbPos = (e.themePickerOff * contentHInner) / scrollable
+		}
+		if thumbPos >= contentHInner {
+			thumbPos = contentHInner - 1
+		}
+		sy := boxY + 2 + thumbPos
+		screen.SetContent(boxX+boxW-1, sy, '▓', nil, tcell.StyleDefault.Background(colSurface0).Foreground(colOverlay0))
+	}
+
+	// instruction line
+	help := "↑↓ browse  ·  Enter select  ·  Esc cancel"
+	helpRunes := []rune(help)
+	helpY := boxY + boxH - 1
+	for dx, ch := range helpRunes {
+		sx := boxX + 1 + dx
+		if sx >= boxX+boxW-1 {
+			break
+		}
+		screen.SetContent(sx, helpY, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(colSubtext0))
 	}
 }

@@ -18,7 +18,7 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 && (event.Rune() == 't' || event.Rune() == 'T') {
-		e.cycleTheme()
+		e.cmdThemePicker()
 		return nil
 	}
 
@@ -254,7 +254,7 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 
 func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 	if event.Key() == tcell.KeyRune && event.Modifiers()&tcell.ModAlt != 0 && (event.Rune() == 't' || event.Rune() == 'T') {
-		e.cycleTheme()
+		e.cmdThemePicker()
 		return nil
 	}
 
