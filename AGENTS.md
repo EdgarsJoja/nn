@@ -3,44 +3,53 @@
 ## Build & Verify
 
 ```sh
-go build ./...
+go build -o nn .
 go vet ./...
 ```
 
-## Code Conventions
+## Package Structure
 
-- All source files are in `package main` — no subdirectories.
-- Editor state lives in the `Editor` struct (`main.go:16-74`).
-- Per-tab state lives in `FileTab` (`buffer.go:24-35`).
-- Key bindings go in `keys.go` in the `handleEditorKey` / `handleSidebarKey` switch.
-- Buffer manipulation methods go in `buffer.go`.
-- Screen drawing goes in `draw.go`.
-- Syntax / language detection goes in `syntax.go`.
-- Themes go in `theme.go`.
-- Git integration goes in `git.go`.
+All `.go` files are `package main` — no subdirectories, no tests.
 
-## Undo
+## File Map
 
-- Bulk operations (indent, unindent, toggle comment, delete line, duplicate line)
-  call `e.saveUndoState(opNone)` before making changes.
-- Character insertions call `e.saveUndoState(opInsert)`.
-- Backspace calls `e.saveUndoState(opDeleteBk)`.
-- Forward delete calls `e.saveUndoState(opDeleteFd)`.
-- After modifying the buffer, call `e.setModified()`.
-- For operations that modify many lines at once, also invalidate the syntax
-  token cache with `e.openFiles[e.activeTab].syntaxTokens = nil`.
+| File | Purpose |
+|---|---|
+| `main.go` | `Editor` struct (16-74), app init, layout, help, input handling, settings |
+| `buffer.go` | `FileTab`, buffer ops, undo/redo, clipboard, indent/comment |
+| `keys.go` | Key bindings — `handleEditorKey` / `handleSidebarKey` switches |
+| `draw.go` | Screen drawing — editor, sidebar, status bar, help overlay |
+| `syntax.go` | Chroma syntax highlighting — `langFromExt()`, `tokenTypeColor()`, tokenizer |
+| `theme.go` | 8 themes (Catppuccin, Tokyo Night, Dracula, etc.) |
+| `git.go` | Pure-Go git via `go-git/v5` — branch, line-level diff, sidebar colors |
+
+## Undo Rules
+
+- `e.saveUndoState(opInsert)` — char insert
+- `e.saveUndoState(opDeleteBk)` — backspace
+- `e.saveUndoState(opDeleteFd)` — forward delete
+- `e.saveUndoState(opNone)` — all bulk operations (indent, unindent, toggle comment, cut, paste, delete line, duplicate line)
 
 ## Syntax Highlighting
 
-- Language detection: `langFromExt()` in `syntax.go` maps filenames/extensions to
-  Chroma lexer names.
-- Token colors: `tokenTypeColor()` maps Chroma `TokenType` to theme colors.
-- The token cache is invalidated by setting `tab.syntaxTokens = nil` or using
-  the debounce mechanism (`tokenizeDebounce = 5`).
+- `langFromExt()` maps extensions → Chroma lexer name. No shebang detection — extensionless files get no highlighting.
+- Chroma token types map to theme colors in `tokenTypeColor()`. The `Generic*` range is notably used for markdown formatting.
+- Token cache debounce: `tokenizeDebounce = 5`. After any bulk buffer modification, **explicitly invalidate** with `e.openFiles[e.activeTab].syntaxTokens = nil` to force re-tokenization on next draw.
 
 ## Selection
 
-- `e.selection.Active` controls whether there is an active selection.
-- When the selection end has `X == 0` and `Y > start.Y`, the endpoint is at the
-  start of the line *below* the last visually selected line — operations should
-  adjust `endY` down by 1 to avoid affecting that line.
+- `e.selection.Active` controls whether a selection exists.
+- When `End.X == 0 && End.Y > Start.Y`, the endpoint is at the start of the line *below* the last visually selected line. Iterate `startY..endY-1` to avoid affecting that line.
+
+## tcell Quirks
+
+- **Ctrl+/** arrives as `tcell.KeyCtrlUnderscore` (ASCII 31, the same as Ctrl+_). Some terminals may send `KeyRune '/'` with Ctrl modifier — check both.
+- **Shift+Tab** is `tcell.KeyBacktab`.
+
+## Active Buffer
+
+`e.buffer` / `e.cursor` / `e.filename` / `e.modified` are the **active** tab's state. They're synced to `e.openFiles[e.activeTab]` via `saveCurrentTab()` / `restoreTab()`. Always call `saveCurrentTab()` before switching tabs and `restoreTab()` after.
+
+## Settings
+
+Theme, `hide_dotfiles`, and `sidebar_width` persist to `~/.config/nn/settings.json` via `loadSettings()` / `saveSettings()`.
