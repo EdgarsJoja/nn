@@ -228,6 +228,11 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		e.drawFuzzyFinder(screen)
 	}
 
+	if e.showTextSearch {
+		screen.HideCursor()
+		e.drawTextSearch(screen)
+	}
+
 	return x, y, width, height
 }
 
@@ -642,5 +647,227 @@ func (e *Editor) drawFuzzyFinder(screen tcell.Screen) {
 			sy := boxY + 2 + thumbPos
 			screen.SetContent(boxX+boxW-1, sy, '▓', nil, tcell.StyleDefault.Background(colSurface0).Foreground(colOverlay0))
 		}
+	}
+}
+
+func (e *Editor) drawTextSearch(screen tcell.Screen) {
+	w, h := screen.Size()
+
+	const contextLines = 1
+	const resultRows = 5
+
+	maxResults := e.textSearchRowCount()
+	visibleCount := len(e.textSearchResults)
+	if visibleCount > maxResults {
+		visibleCount = maxResults
+	}
+	headerRows := 2
+	footerRows := 1
+	boxH := visibleCount*resultRows + headerRows + footerRows
+	if boxH < headerRows+footerRows {
+		boxH = headerRows + footerRows
+	}
+	if boxH > h-2 {
+		boxH = h - 2
+	}
+	maxContent := (boxH - headerRows - footerRows) / resultRows
+	if visibleCount > maxContent {
+		visibleCount = maxContent
+	}
+
+	boxW := w - 4
+	if boxW < 40 {
+		boxW = 40
+	}
+	boxX := (w - boxW) / 2
+	boxY := h - boxH - 2
+	if boxY < 0 {
+		boxY = 0
+	}
+
+	if e.textSearchIdx < e.textSearchOff {
+		e.textSearchOff = e.textSearchIdx
+	}
+	if e.textSearchIdx >= e.textSearchOff+visibleCount && visibleCount > 0 {
+		e.textSearchOff = e.textSearchIdx - visibleCount + 1
+	}
+
+	contentW := boxW - 2
+	innerW := contentW - 2
+
+	for dy := 0; dy < boxH; dy++ {
+		for dx := 0; dx < boxW; dx++ {
+			sx := boxX + dx
+			sy := boxY + dy
+			if sx < 0 || sx >= w || sy < 0 || sy >= h {
+				continue
+			}
+			ch := ' '
+			fg := colText
+			bg := colSurface0
+			switch {
+			case dy == 0 && dx == 0:
+				ch = '╭'
+				fg = colOverlay0
+			case dy == 0 && dx == boxW-1:
+				ch = '╮'
+				fg = colOverlay0
+			case dy == boxH-1 && dx == 0:
+				ch = '╰'
+				fg = colOverlay0
+			case dy == boxH-1 && dx == boxW-1:
+				ch = '╯'
+				fg = colOverlay0
+			case dy == 0 || dy == boxH-1:
+				ch = '─'
+				fg = colOverlay0
+			case dx == 0 || dx == boxW-1:
+				ch = '│'
+				fg = colOverlay0
+			}
+			screen.SetContent(sx, sy, ch, nil, tcell.StyleDefault.Background(bg).Foreground(fg))
+		}
+	}
+
+	query := "> " + e.textSearchQuery
+	if len([]rune(query)) > contentW {
+		query = string([]rune(query)[:contentW])
+	}
+	query += strings.Repeat(" ", contentW-len([]rune(query)))
+	for dx, ch := range query {
+		screen.SetContent(boxX+1+dx, boxY+1, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(colGreen))
+	}
+
+	curY := boxY + 2
+	queryLen := len([]rune(e.textSearchQuery))
+
+	for i := 0; i+e.textSearchOff < len(e.textSearchResults) && i < visibleCount && curY+resultRows <= boxY+boxH-1; i++ {
+		r := e.textSearchResults[i+e.textSearchOff]
+		idx := i + e.textSearchOff
+		isSel := idx == e.textSearchIdx
+		borderFg := colOverlay0
+		if isSel {
+			borderFg = colBlue
+		}
+
+		if isSel && innerW > 0 {
+			lineLen := len([]rune(r.line))
+			desiredPos := innerW / 3
+			newOff := r.matchCol - desiredPos
+			if newOff < 0 {
+				newOff = 0
+			}
+			if lineLen > innerW && newOff > lineLen-innerW {
+				newOff = lineLen - innerW
+			}
+			if lineLen <= innerW {
+				newOff = 0
+			}
+			e.textSearchHOff = newOff
+		}
+
+		hOff := 0
+		if isSel {
+			hOff = e.textSearchHOff
+		}
+
+		// Top border: ┌── file.go:42 ──────────┐
+		label := r.filePath + ":" + fmt.Sprint(r.lineNum)
+		labelRunes := []rune(label)
+		topRunes := make([]rune, innerW)
+		topRunes[0] = '┌'
+		topRunes[innerW-1] = '┐'
+		for dx := 1; dx < innerW-1; dx++ {
+			labelIdx := dx - 1
+			if labelIdx >= 0 && labelIdx < len(labelRunes) {
+				topRunes[dx] = labelRunes[labelIdx]
+			} else {
+				topRunes[dx] = '─'
+			}
+		}
+		for dx := 0; dx < innerW; dx++ {
+			screen.SetContent(boxX+1+dx, curY, topRunes[dx], nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+		}
+		curY++
+
+		// draw a content line with left/right borders
+		drawLine := func(text string, fg tcell.Color) {
+			textRunes := []rune(text)
+			screen.SetContent(boxX+1, curY, '│', nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+			for dx := 1; dx < innerW-1; dx++ {
+				bufIdx := hOff + dx - 1
+				ch := ' '
+				if bufIdx >= 0 && bufIdx < len(textRunes) {
+					ch = textRunes[bufIdx]
+				}
+				screen.SetContent(boxX+1+dx, curY, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(fg))
+			}
+			screen.SetContent(boxX+innerW, curY, '│', nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+			curY++
+		}
+
+		// Context above
+		if len(r.before) > contextLines {
+			r.before = r.before[len(r.before)-contextLines:]
+		}
+		for _, bl := range r.before {
+			drawLine(bl, colSubtext0)
+		}
+		for pad := len(r.before); pad < contextLines; pad++ {
+			drawLine("", colSubtext0)
+		}
+
+		// Match line
+		matchRunes := []rune(r.line)
+		screen.SetContent(boxX+1, curY, '│', nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+		for dx := 1; dx < innerW-1; dx++ {
+			bufIdx := hOff + dx - 1
+			ch := ' '
+			if bufIdx >= 0 && bufIdx < len(matchRunes) {
+				ch = matchRunes[bufIdx]
+			}
+			if queryLen > 0 && bufIdx >= r.matchCol && bufIdx < r.matchCol+queryLen {
+				screen.SetContent(boxX+1+dx, curY, ch, nil, tcell.StyleDefault.Background(colKeyword).Foreground(colBase))
+			} else {
+				screen.SetContent(boxX+1+dx, curY, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(colText))
+			}
+		}
+		screen.SetContent(boxX+innerW, curY, '│', nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+		curY++
+
+		// Context below
+		if len(r.after) > contextLines {
+			r.after = r.after[:contextLines]
+		}
+		for _, al := range r.after {
+			drawLine(al, colSubtext0)
+		}
+		for pad := len(r.after); pad < contextLines; pad++ {
+			drawLine("", colSubtext0)
+		}
+
+		// Bottom border
+		screen.SetContent(boxX+1, curY, '└', nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+		for dx := 1; dx < innerW-1; dx++ {
+			screen.SetContent(boxX+1+dx, curY, '─', nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+		}
+		screen.SetContent(boxX+innerW, curY, '┘', nil, tcell.StyleDefault.Background(colSurface0).Foreground(borderFg))
+		curY++
+	}
+
+	total := len(e.textSearchResults)
+	visibleRows := (boxH - 3) / resultRows
+	if total > visibleRows {
+		contentHInner := boxH - 3
+		scrollable := total - visibleRows
+		thumbPos := 0
+		if scrollable > 0 {
+			thumbPos = (e.textSearchOff * contentHInner) / scrollable
+		}
+		if thumbPos >= contentHInner {
+			thumbPos = contentHInner - 1
+		}
+		sy := boxY + 2 + thumbPos
+		screen.SetContent(boxX+boxW-1, sy, '▓', nil, tcell.StyleDefault.Background(colSurface0).Foreground(colOverlay0))
 	}
 }

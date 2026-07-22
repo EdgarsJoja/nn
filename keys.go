@@ -27,6 +27,13 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 
+	if key == tcell.KeyCtrlK || (key == tcell.KeyCtrlF && hasShift) {
+		if !e.showTextSearch {
+			e.cmdTextSearch()
+		}
+		return nil
+	}
+
 	switch key {
 	case tcell.KeyCtrlV:
 		e.pasteClip()
@@ -348,6 +355,13 @@ func (e *Editor) handleSidebarKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyCtrlP:
 		e.cmdFuzzyFinder()
+		e.mode = "editor"
+		e.app.SetFocus(e.editorBox)
+		return nil
+	case tcell.KeyCtrlK:
+		if !e.showTextSearch {
+			e.cmdTextSearch()
+		}
 		e.mode = "editor"
 		e.app.SetFocus(e.editorBox)
 		return nil

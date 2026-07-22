@@ -615,7 +615,7 @@ func (e *Editor) toggleComment() {
 
 func (e *Editor) scanFiles() {
 	e.fuzzyFiles = nil
-	root := e.sidebarDir
+	root := e.initialDir
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -648,6 +648,120 @@ func (e *Editor) scanFiles() {
 	})
 }
 
+func (e *Editor) scanTextFiles() []string {
+	root := e.initialDir
+	var files []string
+	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if path == root {
+			return nil
+		}
+		base := d.Name()
+		if base == ".git" && d.IsDir() {
+			return filepath.SkipDir
+		}
+		if e.hideDotfiles && strings.HasPrefix(base, ".") && d.IsDir() {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if e.hideDotfiles && strings.HasPrefix(base, ".") {
+			return nil
+		}
+		if isDepDir(path) {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(base))
+		if isBinaryExt(ext) {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		files = append(files, rel)
+		return nil
+	})
+	sort.Strings(files)
+	return files
+}
+
+func (e *Editor) searchInFiles(query string) {
+	e.textSearchQuery = query
+	if query == "" {
+		e.textSearchResults = nil
+		e.textSearchIdx = 0
+		e.textSearchOff = 0
+		return
+	}
+
+	root := e.initialDir
+	lower := strings.ToLower(query)
+
+	if e.textSearchCache == nil {
+		e.textSearchCache = make(map[string][]string)
+		e.textSearchFiles = e.scanTextFiles()
+		for _, rel := range e.textSearchFiles {
+			fullPath := filepath.Join(root, rel)
+			data, err := os.ReadFile(fullPath)
+			if err != nil {
+				continue
+			}
+			e.textSearchCache[rel] = strings.Split(string(data), "\n")
+		}
+	}
+
+	const maxResults = 100
+	var results []TextSearchResult
+
+	for _, rel := range e.textSearchFiles {
+		if len(results) >= maxResults {
+			break
+		}
+		lines, ok := e.textSearchCache[rel]
+		if !ok {
+			continue
+		}
+
+		for y, line := range lines {
+			if len(results) >= maxResults {
+				break
+			}
+			lowerLine := strings.ToLower(line)
+			idx := strings.Index(lowerLine, lower)
+			if idx == -1 {
+				continue
+			}
+
+			beforeLines := make([]string, 0, 3)
+			for by := y - 3; by < y; by++ {
+				if by >= 0 {
+					beforeLines = append(beforeLines, lines[by])
+				}
+			}
+			afterLines := make([]string, 0, 3)
+			for ay := y + 1; ay <= y+3 && ay < len(lines); ay++ {
+				afterLines = append(afterLines, lines[ay])
+			}
+
+			results = append(results, TextSearchResult{
+				filePath: rel,
+				lineNum:  y + 1,
+				matchCol: idx,
+				line:     line,
+				before:   beforeLines,
+				after:    afterLines,
+			})
+		}
+	}
+
+	e.textSearchResults = results
+	if e.textSearchIdx >= len(results) {
+		e.textSearchIdx = 0
+	}
+	e.textSearchOff = 0
+}
+
 var depDirs = []string{
 	"/vendor/", "/node_modules/", "/.git/", "/__pycache__/",
 	"/.venv/", "/venv/", "/.tox/", "/env/",
@@ -669,9 +783,37 @@ func isDepDir(path string) bool {
 	return false
 }
 
+var binaryExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".bmp": true, ".ico": true, ".webp": true,
+	".mp3": true, ".wav": true, ".ogg": true, ".flac": true, ".aac": true, ".wma": true,
+	".mp4": true, ".avi": true, ".mkv": true, ".mov": true, ".wmv": true, ".flv": true,
+	".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true,
+	".zip": true, ".tar": true, ".gz": true, ".bz2": true, ".xz": true, ".7z": true, ".rar": true,
+	".exe": true, ".dll": true, ".so": true, ".dylib": true, ".bin": true, ".o": true, ".a": true, ".lib": true,
+	".db": true, ".sqlite": true, ".sqlite3": true, ".mdb": true,
+	".ttf": true, ".otf": true, ".woff": true, ".woff2": true, ".eot": true,
+	".pyc": true, ".pyo": true, ".class": true, ".jar": true, ".dex": true,
+	".iso": true, ".img": true, ".dmg": true,
+	".wasm": true,
+	".dat": true, ".pkl": true,
+}
+
+func isBinaryExt(ext string) bool {
+	return binaryExts[ext]
+}
+
 type fuzzyFileInfo struct {
 	path  string
 	lower []rune
+}
+
+type TextSearchResult struct {
+	filePath string
+	lineNum  int
+	matchCol int
+	line     string
+	before   []string
+	after    []string
 }
 
 type fuzzyResult struct {
@@ -809,6 +951,7 @@ func matchFrom(q, t []rune, start int) (int, []int) {
 }
 
 func (e *Editor) cmdFuzzyFinder() {
+	e.restoreStatusBar()
 	e.scanFiles()
 	e.fuzzyResults = make([]fuzzyResult, len(e.fuzzyFiles))
 	for i, f := range e.fuzzyFiles {
@@ -818,6 +961,8 @@ func (e *Editor) cmdFuzzyFinder() {
 	e.fuzzyOff = 0
 	e.fuzzyQuery = ""
 	e.showFuzzy = true
+	e.mode = "editor"
+	e.app.SetFocus(e.editorBox)
 	if len(e.fuzzyFiles) == 0 {
 		e.msg("fuzzy: no files found")
 	} else {
@@ -924,7 +1069,7 @@ func (e *Editor) fuzzyOpen() {
 		e.msg("fuzzy: no matches to open")
 		return
 	}
-	path := filepath.Join(e.sidebarDir, e.fuzzyResults[e.fuzzyIdx].path)
+	path := filepath.Join(e.initialDir, e.fuzzyResults[e.fuzzyIdx].path)
 	e.fuzzyCancel()
 	e.mode = "editor"
 	e.app.SetFocus(e.editorBox)

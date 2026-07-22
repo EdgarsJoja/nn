@@ -46,6 +46,8 @@ type Editor struct {
 	sidebarAllFiles []string
 	sidebarDirIdx map[string]int
 
+	initialDir string
+
 	mode      string
 	inputMode string
 
@@ -80,6 +82,16 @@ type Editor struct {
 	fuzzyQuery   string
 	fuzzyPrevQuery string
 	fuzzyPrevCandidates []int
+
+	textSearchResults []TextSearchResult
+	textSearchIdx     int
+	textSearchOff     int
+	textSearchHOff    int
+	showTextSearch    bool
+	textSearchQuery   string
+	textSearchFiles   []string
+	textSearchCache   map[string][]string
+	textSearchTimer   *time.Timer
 }
 
 func (e *Editor) msg(text string) {
@@ -162,6 +174,14 @@ func (e *Editor) cancelInput() {
 	}
 }
 
+func (e *Editor) restoreStatusBar() {
+	if e.inputMode != "" {
+		e.inputMode = ""
+		e.mainFlex.RemoveItem(e.inputField)
+		e.mainFlex.AddItem(e.statusBox, 1, 0, false)
+	}
+}
+
 func (e *Editor) cmdSave() {
 	if e.filename == "" {
 		e.showInput("save", "save as: ")
@@ -175,6 +195,138 @@ func (e *Editor) cmdSave() {
 func (e *Editor) cmdOpen()   { e.showInput("open", "open: ") }
 func (e *Editor) cmdNew()    { e.showInput("new", "new file: ") }
 func (e *Editor) cmdSearch() { e.showInput("search", "search: ") }
+
+func (e *Editor) cmdTextSearch() {
+	e.restoreStatusBar()
+	e.textSearchQuery = ""
+	e.textSearchResults = nil
+	e.textSearchIdx = 0
+	e.textSearchOff = 0
+	e.textSearchHOff = 0
+	e.textSearchFiles = nil
+	e.textSearchCache = nil
+	e.showTextSearch = true
+	e.mode = "editor"
+	e.app.SetFocus(e.editorBox)
+	e.msg("text search: type to search across files")
+}
+
+func (e *Editor) textSearchOpen() {
+	if len(e.textSearchResults) == 0 {
+		e.msg("text search: no matches")
+		return
+	}
+	r := e.textSearchResults[e.textSearchIdx]
+	path := filepath.Join(e.initialDir, r.filePath)
+	e.showTextSearch = false
+	e.mode = "editor"
+	e.app.SetFocus(e.editorBox)
+	e.loadFile(path)
+	for y := range e.buffer {
+		if y+1 == r.lineNum {
+			e.cursor.Y = y
+			e.cursor.X = r.matchCol
+			e.cursorInBounds()
+			e.scrollCursor()
+			break
+		}
+	}
+}
+
+func (e *Editor) textSearchCancel() {
+	if e.textSearchTimer != nil {
+		e.textSearchTimer.Stop()
+		e.textSearchTimer = nil
+	}
+	e.showTextSearch = false
+	e.textSearchResults = nil
+	e.textSearchQuery = ""
+	e.msg("")
+}
+
+func (e *Editor) textSearchUp() {
+	if e.textSearchIdx > 0 {
+		e.textSearchIdx--
+	}
+	if e.textSearchIdx < e.textSearchOff {
+		e.textSearchOff = e.textSearchIdx
+	}
+}
+
+func (e *Editor) textSearchDown() {
+	if e.textSearchIdx < len(e.textSearchResults)-1 {
+		e.textSearchIdx++
+	}
+	rows := e.textSearchRowCount()
+	if e.textSearchIdx >= e.textSearchOff+rows {
+		e.textSearchOff = e.textSearchIdx - rows + 1
+	}
+}
+
+func (e *Editor) textSearchPgUp() {
+	rows := e.textSearchRowCount()
+	e.textSearchIdx -= rows
+	if e.textSearchIdx < 0 {
+		e.textSearchIdx = 0
+	}
+	e.textSearchOff = e.textSearchIdx
+}
+
+func (e *Editor) textSearchPgDn() {
+	rows := e.textSearchRowCount()
+	last := len(e.textSearchResults) - 1
+	e.textSearchIdx += rows
+	if e.textSearchIdx > last {
+		e.textSearchIdx = last
+	}
+	if e.textSearchIdx >= e.textSearchOff+rows {
+		e.textSearchOff = e.textSearchIdx - rows + 1
+	}
+}
+
+func (e *Editor) textSearchHome() {
+	e.textSearchIdx = 0
+	e.textSearchOff = 0
+}
+
+func (e *Editor) textSearchEnd() {
+	e.textSearchIdx = len(e.textSearchResults) - 1
+	rows := e.textSearchRowCount()
+	if e.textSearchIdx >= e.textSearchOff+rows {
+		e.textSearchOff = e.textSearchIdx - rows + 1
+	}
+}
+
+func (e *Editor) textSearchRowCount() int {
+	_, _, _, h := e.editorBox.GetRect()
+	boxH := h - 4
+	if boxH < 4 {
+		boxH = 4
+	}
+	n := (boxH - 3) / 5
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+func (e *Editor) debounceTextSearch() {
+	if e.textSearchTimer != nil {
+		e.textSearchTimer.Stop()
+	}
+	e.textSearchTimer = time.AfterFunc(150*time.Millisecond, func() {
+		e.app.QueueUpdateDraw(func() {
+			if e.showTextSearch {
+				e.searchInFiles(e.textSearchQuery)
+			}
+		})
+	})
+	if e.textSearchQuery == "" {
+		e.textSearchResults = nil
+		e.textSearchIdx = 0
+		e.textSearchOff = 0
+	}
+}
 
 func (e *Editor) cmdHelp() {
 	e.showHelp = !e.showHelp
@@ -511,6 +663,51 @@ func (e *Editor) Init() {
 			}
 			return nil
 		}
+		if e.showTextSearch {
+			switch event.Key() {
+			case tcell.KeyRune:
+				e.textSearchQuery += string(event.Rune())
+				e.debounceTextSearch()
+				return nil
+			case tcell.KeyBackspace, tcell.KeyBackspace2:
+				if len(e.textSearchQuery) > 0 {
+					e.textSearchQuery = e.textSearchQuery[:len(e.textSearchQuery)-1]
+				}
+				e.debounceTextSearch()
+				return nil
+			case tcell.KeyEnter:
+				e.textSearchOpen()
+				return nil
+			case tcell.KeyEscape:
+				e.textSearchCancel()
+				return nil
+			case tcell.KeyUp:
+				e.textSearchUp()
+				return nil
+			case tcell.KeyDown:
+				e.textSearchDown()
+				return nil
+			case tcell.KeyPgUp:
+				e.textSearchPgUp()
+				return nil
+			case tcell.KeyPgDn:
+				e.textSearchPgDn()
+				return nil
+			case tcell.KeyHome:
+				e.textSearchHome()
+				return nil
+			case tcell.KeyEnd:
+				e.textSearchEnd()
+				return nil
+			case tcell.KeyLeft:
+				e.textSearchLeft()
+				return nil
+			case tcell.KeyRight:
+				e.textSearchRight()
+				return nil
+			}
+			return nil
+		}
 		if e.showHelp {
 			switch event.Key() {
 			case tcell.KeyEscape, tcell.KeyF1:
@@ -549,6 +746,12 @@ func (e *Editor) Init() {
 			e.cmdHelp()
 			return nil
 		}
+		if event.Key() == tcell.KeyCtrlK || (event.Key() == tcell.KeyCtrlF && event.Modifiers()&tcell.ModShift != 0) {
+			if !e.showTextSearch {
+				e.cmdTextSearch()
+			}
+			return nil
+		}
 		return event
 	})
 
@@ -559,6 +762,7 @@ func (e *Editor) Init() {
 	e.showSidebar = true
 	e.sidebarWidth = 28
 	e.sidebarDir = "."
+	e.initialDir, _ = os.Getwd()
 	e.hideDotfiles = true
 	e.running = true
 	e.themeIdx = 0
@@ -663,6 +867,7 @@ func (e *Editor) makeWidgets() {
 		"  GLOBAL",
 		"    F1                     Show this help",
 		"    Ctrl+P                 Fuzzy file finder",
+		"    Ctrl+K / Ctrl+Shift+F   Text search across files",
 		"    Ctrl+S                 Save file",
 		"    Ctrl+N                 New file",
 		"    Ctrl+B                 Toggle sidebar",
