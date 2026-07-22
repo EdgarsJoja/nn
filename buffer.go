@@ -427,6 +427,188 @@ func (e *Editor) pasteClip() {
 	e.setModified()
 }
 
+func commentPrefix(lang string) string {
+	switch lang {
+	case "go", "c", "cpp", "java", "javascript", "typescript", "jsx",
+		"rust", "swift", "kotlin", "scala", "svelte", "vue", "zig", "ocaml",
+		"dart", "php", "protobuf":
+		return "// "
+	case "python", "ruby", "bash", "r", "yaml", "toml", "makefile",
+		"nix", "fish", "terraform", "dockerfile", "gitignore", "ini",
+		"elixir":
+		return "# "
+	case "sql", "lua":
+		return "-- "
+	}
+	return "// "
+}
+
+func unindentLine(line *string) bool {
+	if len(*line) > 0 && (*line)[0] == '\t' {
+		*line = (*line)[1:]
+		return true
+	}
+	spaces := 0
+	for spaces < 4 && spaces < len(*line) && (*line)[spaces] == ' ' {
+		spaces++
+	}
+	if spaces > 0 {
+		*line = (*line)[spaces:]
+		return true
+	}
+	return false
+}
+
+func addComment(line, prefix string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	leadingWS := line[:len(line)-len(trimmed)]
+	return leadingWS + prefix + trimmed
+}
+
+func uncommentLine(line, prefix string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	leadingWS := line[:len(line)-len(trimmed)]
+	if strings.HasPrefix(trimmed, prefix) {
+		return leadingWS + trimmed[len(prefix):]
+	}
+	return line
+}
+
+func (e *Editor) indentSelection() {
+	e.saveUndoState(opNone)
+	start, end := e.selection.Start, e.selection.End
+	if start.Y > end.Y || (start.Y == end.Y && start.X > end.X) {
+		start, end = end, start
+	}
+	endY := end.Y
+	if end.X == 0 && endY > start.Y {
+		endY--
+	}
+	for y := start.Y; y <= endY; y++ {
+		e.buffer[y] = "\t" + e.buffer[y]
+	}
+	if e.cursor.Y >= start.Y && e.cursor.Y <= endY {
+		e.cursor.X++
+	}
+	e.selection.Start.Y = start.Y
+	e.selection.Start.X = 0
+	e.selection.End.Y = endY
+	e.selection.End.X = len([]rune(e.buffer[endY]))
+	e.selection.Active = true
+	e.openFiles[e.activeTab].syntaxTokens = nil
+	e.setModified()
+}
+
+func (e *Editor) unindentSelection() {
+	e.saveUndoState(opNone)
+
+	var startY, endY int
+	if e.selection.Active {
+		start, end := e.selection.Start, e.selection.End
+		if start.Y > end.Y || (start.Y == end.Y && start.X > end.X) {
+			start, end = end, start
+		}
+		startY = start.Y
+		endY = end.Y
+		if end.X == 0 && endY > startY {
+			endY--
+		}
+	} else {
+		startY = e.cursor.Y
+		endY = e.cursor.Y
+	}
+
+	anyUnindented := false
+	for y := startY; y <= endY; y++ {
+		if unindentLine(&e.buffer[y]) {
+			anyUnindented = true
+		}
+	}
+	if !anyUnindented {
+		return
+	}
+
+	if e.cursor.Y >= startY && e.cursor.Y <= endY {
+		e.cursor.X--
+		if e.cursor.X < 0 {
+			e.cursor.X = 0
+		}
+	}
+
+	if e.selection.Active {
+		e.selection.Start.Y = startY
+		e.selection.Start.X = 0
+		e.selection.End.Y = endY
+		e.selection.End.X = len([]rune(e.buffer[endY]))
+		e.selection.Active = true
+	}
+	e.openFiles[e.activeTab].syntaxTokens = nil
+	e.setModified()
+}
+
+func (e *Editor) toggleComment() {
+	e.saveUndoState(opNone)
+
+	prefix := commentPrefix(langFromExt(e.filename))
+	if prefix == "" {
+		return
+	}
+
+	var startY, endY int
+	if e.selection.Active {
+		start, end := e.selection.Start, e.selection.End
+		if start.Y > end.Y || (start.Y == end.Y && start.X > end.X) {
+			start, end = end, start
+		}
+		startY = start.Y
+		endY = end.Y
+		if end.X == 0 && endY > startY {
+			endY--
+		}
+	} else {
+		startY = e.cursor.Y
+		endY = e.cursor.Y
+	}
+
+	allCommented := true
+	for y := startY; y <= endY; y++ {
+		trimmed := strings.TrimLeft(e.buffer[y], " \t")
+		if !strings.HasPrefix(trimmed, prefix) {
+			allCommented = false
+			break
+		}
+	}
+
+	if allCommented {
+		for y := startY; y <= endY; y++ {
+			e.buffer[y] = uncommentLine(e.buffer[y], prefix)
+		}
+		if e.cursor.Y >= startY && e.cursor.Y <= endY {
+			e.cursor.X -= len([]rune(prefix))
+			if e.cursor.X < 0 {
+				e.cursor.X = 0
+			}
+		}
+	} else {
+		for y := startY; y <= endY; y++ {
+			e.buffer[y] = addComment(e.buffer[y], prefix)
+		}
+		if e.cursor.Y >= startY && e.cursor.Y <= endY {
+			e.cursor.X += len([]rune(prefix))
+		}
+	}
+
+	if e.selection.Active {
+		e.selection.Start.Y = startY
+		e.selection.Start.X = 0
+		e.selection.End.Y = endY
+		e.selection.End.X = len([]rune(e.buffer[endY]))
+		e.selection.Active = true
+	}
+	e.openFiles[e.activeTab].syntaxTokens = nil
+	e.setModified()
+}
+
 func (e *Editor) openFile(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

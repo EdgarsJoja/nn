@@ -54,7 +54,9 @@ func langFromExt(name string) string {
 		return "ruby"
 	case ".sh", ".bash", ".env", ".envrc":
 		return "bash"
-	case ".zsh":
+	case ".zsh", ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout":
+		return "bash"
+	case ".bashrc", ".bash_profile", ".bash_logout", ".bash_aliases", ".bash_completion", ".profile":
 		return "bash"
 	case ".yaml", ".yml":
 		return "yaml"

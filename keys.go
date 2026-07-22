@@ -18,6 +18,11 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 
+	if key == tcell.KeyCtrlUnderscore || (key == tcell.KeyRune && hasCtrl && event.Rune() == '/') {
+		e.toggleComment()
+		return nil
+	}
+
 	switch key {
 	case tcell.KeyCtrlV:
 		e.pasteClip()
@@ -215,7 +220,13 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 			e.deleteForward()
 		}
 	case tcell.KeyTab:
-		e.insertText("\t")
+		if e.selection.Active {
+			e.indentSelection()
+		} else {
+			e.insertText("\t")
+		}
+	case tcell.KeyBacktab:
+		e.unindentSelection()
 	case tcell.KeyRune:
 		e.insertText(string(event.Rune()))
 	default:
