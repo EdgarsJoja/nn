@@ -6,7 +6,7 @@ description: Build and verify project that there are no compile time issues
 ## What to do
 
 Run project build command and check output that there are no issues.
-Let user know, that this skill was used.
+Let user know, that this skill was used. For example, by printing "BUILD VERIFIED"
 
 ## When to use
 
