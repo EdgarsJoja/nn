@@ -18,8 +18,7 @@ type gitInfo struct {
 }
 
 func computeLineStat(headContent string, buffer []string) []byte {
-	headStr := strings.TrimSuffix(headContent, "\n")
-	headLines := strings.Split(headStr, "\n")
+	headLines := strings.Split(headContent, "\n")
 	if len(headLines) == 1 && headLines[0] == "" {
 		headLines = nil
 	}
@@ -35,34 +34,93 @@ func computeLineStat(headContent string, buffer []string) []byte {
 	}
 
 	// Forward: match identical lines from the start
-	i, j := 0, 0
-	for i < len(headLines) && j < len(buf) && headLines[i] == buf[j] {
-		stat[j] = ' '
-		i++
-		j++
+	hp, bp := 0, 0
+	for hp < len(headLines) && bp < len(buf) && headLines[hp] == buf[bp] {
+		stat[bp] = ' '
+		hp++
+		bp++
 	}
 
-	// Backward: match identical lines from the end
+	// Backward scan with a safety limit: only match up to the
+	// number of remaining lines in the shorter tail. This prevents
+	// matching shifted duplicate lines (e.g. blank lines).
 	ti, tj := len(headLines)-1, len(buf)-1
-	for ti >= i && tj >= j && headLines[ti] == buf[tj] {
-		stat[tj] = ' '
+	maxBack := ti - hp + 1
+	if tj-bp+1 < maxBack {
+		maxBack = tj - bp + 1
+	}
+
+	backCount := 0
+	for ti >= hp && tj >= bp && headLines[ti] == buf[tj] && backCount < maxBack {
 		ti--
 		tj--
+		backCount++
 	}
 
-	// Middle section: position-based comparison.
-	// Each buffer line is compared against the head line at the same offset
-	// within the middle. Matched pair → ' '; different → '~';
-	// buffer lines beyond head length → '+'.
-	for k := j; k <= tj; k++ {
-		headPos := i + (k - j)
-		if headPos <= ti {
-			if buf[k] == headLines[headPos] {
-				stat[k] = ' '
-			} else {
-				stat[k] = '~'
+	// At this point ti and tj have been decremented from the last
+	// non-matching position. Re-increment to get the true match boundaries.
+	ti++
+	tj++
+
+	// Middle section: process from bp to tj-1 (head from hp to ti-1)
+	// Use lookahead matching to handle insertions/deletions
+	for bp < tj && hp < ti {
+		if buf[bp] == headLines[hp] {
+			stat[bp] = ' '
+			hp++
+			bp++
+			continue
+		}
+
+		// Look ahead in head for buf[bp]
+		foundHead := -1
+		for k := hp + 1; k < ti && k <= hp+10; k++ {
+			if headLines[k] == buf[bp] {
+				foundHead = k
+				break
 			}
 		}
+
+		// Look ahead in buf for headLines[hp]
+		foundBuf := -1
+		for k := bp + 1; k < tj && k <= bp+10; k++ {
+			if buf[k] == headLines[hp] {
+				foundBuf = k
+				break
+			}
+		}
+
+		if foundHead != -1 && foundBuf != -1 {
+			// Both match ahead — mark as changed
+			stat[bp] = '~'
+			hp++
+			bp++
+		} else if foundHead != -1 {
+			// buf[bp] matches a later head line → head lines were deleted
+			stat[bp] = '~'
+			hp++
+		} else if foundBuf != -1 {
+			// headLines[hp] matches a later buf line → buf lines were added
+			stat[bp] = '+'
+			bp++
+		} else {
+			// Neither matches ahead — lines are different
+			stat[bp] = '~'
+			hp++
+			bp++
+		}
+	}
+
+	// Remaining buffer lines are added
+	for bp < tj {
+		stat[bp] = '+'
+		bp++
+	}
+
+	// Tail from tj onward is all matched
+	for bp < len(buf) {
+		stat[bp] = ' '
+		bp++
 	}
 
 	return stat
