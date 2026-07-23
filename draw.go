@@ -34,10 +34,13 @@ func (e *Editor) drawSidebar(screen tcell.Screen, x, y, width, height int) (int,
 		disp += strings.Repeat(" ", width-len(disp))
 
 		gitFg, hasGit := e.sidebarGitColor(name)
+		isDir := len(name) > 0 && name[len(name)-1] == '/'
 		if e.mode == "sidebar" && idx == e.sidebarIdx {
 			fg := colText
 			if hasGit {
 				fg = gitFg
+			} else if isDir {
+				fg = colBlue
 			}
 			for dx, ch := range disp {
 				screen.SetContent(x+dx, rowY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(fg))
@@ -46,6 +49,8 @@ func (e *Editor) drawSidebar(screen tcell.Screen, x, y, width, height int) (int,
 			fg := colSubtext0
 			if hasGit {
 				fg = gitFg
+			} else if isDir {
+				fg = colBlue
 			}
 			for dx, ch := range disp {
 				screen.SetContent(x+dx, rowY, ch, nil, tcell.StyleDefault.Background(colMantle).Foreground(fg))
