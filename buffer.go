@@ -129,6 +129,7 @@ func (e *Editor) setModified() {
 	e.modified = true
 	if e.activeTab < len(e.openFiles) {
 		e.openFiles[e.activeTab].modified = true
+		e.openFiles[e.activeTab].syntaxTokens = nil
 	}
 	e.gitDirty = true
 	e.tokenizeDebounce = 5
