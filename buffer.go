@@ -679,6 +679,9 @@ func (e *Editor) scanTextFiles() []string {
 		if isBinaryExt(ext) {
 			return nil
 		}
+		if isBinaryContent(path) {
+			return nil
+		}
 		rel, _ := filepath.Rel(root, path)
 		files = append(files, rel)
 		return nil
@@ -801,6 +804,25 @@ var binaryExts = map[string]bool{
 
 func isBinaryExt(ext string) bool {
 	return binaryExts[ext]
+}
+
+func isBinaryContent(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 8000)
+	n, err := f.Read(buf)
+	if err != nil && n == 0 {
+		return false
+	}
+	for i := 0; i < n; i++ {
+		if buf[i] == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 type fuzzyFileInfo struct {
