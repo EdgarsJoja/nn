@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -384,9 +386,41 @@ func (e *Editor) insertText(text string) {
 	e.setModified()
 }
 
+func writeClipboard(text string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "linux":
+		cmd = exec.Command("xclip", "-i", "-selection", "clipboard")
+	default:
+		return
+	}
+	cmd.Stdin = strings.NewReader(text)
+	cmd.Run()
+}
+
+func readClipboard() string {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbpaste")
+	case "linux":
+		cmd = exec.Command("xclip", "-o", "-selection", "clipboard")
+	default:
+		return ""
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
 func (e *Editor) copySel() {
 	if t := e.selectedText(); t != "" {
 		e.clipboard = t
+		writeClipboard(t)
 		e.msg("copied")
 	}
 }
@@ -395,6 +429,7 @@ func (e *Editor) cutSel() {
 	e.saveUndoState(opNone)
 	if t := e.selectedText(); t != "" {
 		e.clipboard = t
+		writeClipboard(t)
 		e.deleteSelection()
 		e.msg("cut")
 	}
@@ -403,10 +438,14 @@ func (e *Editor) cutSel() {
 func (e *Editor) pasteClip() {
 	e.saveUndoState(opNone)
 	e.deleteSelection()
-	if e.clipboard == "" {
+	text := readClipboard()
+	if text == "" {
+		text = e.clipboard
+	}
+	if text == "" {
 		return
 	}
-	lines := strings.Split(e.clipboard, "\n")
+	lines := strings.Split(text, "\n")
 	if len(lines) == 1 {
 		line := e.buffer[e.cursor.Y]
 		e.buffer[e.cursor.Y] = line[:e.cursor.X] + lines[0] + line[e.cursor.X:]
