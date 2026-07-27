@@ -201,6 +201,28 @@ func (e *Editor) cmdOpen()   { e.showInput("open", "open: ") }
 func (e *Editor) cmdNew()    { e.showInput("new", "new file: ") }
 func (e *Editor) cmdSearch() { e.showInput("search", "search: ") }
 
+func (e *Editor) cmdRevealInSidebar() {
+	if e.filename == "" {
+		return
+	}
+	dir := filepath.Dir(e.filename)
+	if dir == "." {
+		abs, _ := os.Getwd()
+		dir = abs
+	}
+	e.sidebarDirIdx[e.sidebarDir] = e.sidebarIdx
+	e.sidebarDir = dir
+	e.sidebarIdx = 0
+	e.sidebarOff = 0
+	if !e.showSidebar {
+		e.showSidebar = true
+		e.rebuildSidebarVisibility()
+	}
+	e.mode = "sidebar"
+	e.app.SetFocus(e.sidebar)
+	e.refreshDir()
+}
+
 func (e *Editor) cmdTextSearch() {
 	e.restoreStatusBar()
 	e.textSearchQuery = ""
@@ -1000,6 +1022,7 @@ func (e *Editor) makeWidgets() {
 		"    Ctrl+D                 Duplicate line",
 		"    Ctrl+/                 Toggle comment",
 		"    Ctrl+W                 Close tab",
+		"    Ctrl+T                 Reveal file in sidebar",
 		"    Up / Down / Left/Right Move cursor",
 		"    Shift+Arrow            Extend selection",
 		"    Ctrl+Left / Right      Word jump",

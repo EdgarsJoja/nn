@@ -50,6 +50,7 @@ Requires Go 1.24+.
 | `Ctrl+D` | Duplicate line |
 | `Ctrl+/` | Toggle comment |
 | `Ctrl+W` | Close tab |
+| `Ctrl+T` | Reveal current file in sidebar |
 | `↑ ↓ ← →` | Move cursor |
 | `Shift+↑ ↓ ← →` | Extend selection |
 | `Ctrl+← / →` | Word jump |

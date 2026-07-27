@@ -232,6 +232,8 @@ func (e *Editor) closeTab() {
 		e.modified = false
 		e.selection = Selection{}
 		e.openFiles[0].buffer = []string{""}
+		e.openFiles[0].cursor = Point{}
+		e.openFiles[0].offset = Point{}
 		e.openFiles[0].filename = ""
 		e.openFiles[0].modified = false
 		e.msg("closed tab")

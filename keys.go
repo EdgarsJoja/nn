@@ -96,6 +96,9 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 			e.app.SetFocus(e.sidebar)
 		}
 		return nil
+	case tcell.KeyCtrlT:
+		e.cmdRevealInSidebar()
+		return nil
 	case tcell.KeyEscape:
 		e.selection = Selection{}
 		return nil
