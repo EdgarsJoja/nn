@@ -151,7 +151,6 @@ func (e *Editor) submitInput() {
 		}
 		e.pendingDelPath = ""
 	}
-	e.inputMode = ""
 }
 
 func (e *Editor) cancelInput() {
@@ -221,6 +220,7 @@ func (e *Editor) cmdRevealInSidebar() {
 	e.mode = "sidebar"
 	e.app.SetFocus(e.sidebar)
 	e.refreshDir()
+	e.msg("revealed in sidebar")
 }
 
 func (e *Editor) cmdTextSearch() {

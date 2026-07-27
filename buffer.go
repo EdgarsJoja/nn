@@ -96,6 +96,7 @@ func (e *Editor) undo() {
 	e.lastOp = opNone
 	e.cursorInBounds()
 	e.updateGitLineStat()
+	e.msg("undo")
 }
 
 func (e *Editor) redo() {
@@ -125,6 +126,7 @@ func (e *Editor) redo() {
 	e.lastOp = opNone
 	e.cursorInBounds()
 	e.updateGitLineStat()
+	e.msg("redo")
 }
 
 func (e *Editor) setModified() {
@@ -328,13 +330,14 @@ func (e *Editor) selectedText() string {
 	}
 	var lines []string
 	for y := start.Y; y <= end.Y && y < len(e.buffer); y++ {
+		runes := []rune(e.buffer[y])
 		switch {
 		case y == start.Y && y == end.Y:
-			lines = append(lines, e.buffer[y][start.X:end.X])
+			lines = append(lines, string(runes[start.X:end.X]))
 		case y == start.Y:
-			lines = append(lines, e.buffer[y][start.X:])
+			lines = append(lines, string(runes[start.X:]))
 		case y == end.Y:
-			lines = append(lines, e.buffer[y][:end.X])
+			lines = append(lines, string(runes[:end.X]))
 		default:
 			lines = append(lines, e.buffer[y])
 		}
@@ -351,12 +354,12 @@ func (e *Editor) deleteSelection() {
 		start, end = end, start
 	}
 	if start.Y == end.Y {
-		line := e.buffer[start.Y]
-		e.buffer[start.Y] = line[:start.X] + line[end.X:]
+		runes := []rune(e.buffer[start.Y])
+		e.buffer[start.Y] = string(append(runes[:start.X], runes[end.X:]...))
 	} else {
-		first := e.buffer[start.Y][:start.X]
-		last := e.buffer[end.Y][end.X:]
-		e.buffer[start.Y] = first + last
+		first := []rune(e.buffer[start.Y])
+		last := []rune(e.buffer[end.Y])
+		e.buffer[start.Y] = string(first[:start.X]) + string(last[end.X:])
 		e.buffer = append(e.buffer[:start.Y+1], e.buffer[end.Y+1:]...)
 	}
 	e.cursor = start
@@ -369,9 +372,9 @@ func (e *Editor) insertText(text string) {
 	e.deleteSelection()
 	for _, ch := range text {
 		if ch == '\n' {
-			line := e.buffer[e.cursor.Y]
-			rest := line[e.cursor.X:]
-			e.buffer[e.cursor.Y] = line[:e.cursor.X]
+			runes := []rune(e.buffer[e.cursor.Y])
+			rest := string(runes[e.cursor.X:])
+			e.buffer[e.cursor.Y] = string(runes[:e.cursor.X])
 			tail := make([]string, len(e.buffer[e.cursor.Y+1:]))
 			copy(tail, e.buffer[e.cursor.Y+1:])
 			e.buffer = append(e.buffer[:e.cursor.Y+1], "")
@@ -380,8 +383,12 @@ func (e *Editor) insertText(text string) {
 			e.cursor.Y++
 			e.cursor.X = 0
 		} else {
-			line := e.buffer[e.cursor.Y]
-			e.buffer[e.cursor.Y] = line[:e.cursor.X] + string(ch) + line[e.cursor.X:]
+			runes := []rune(e.buffer[e.cursor.Y])
+			newLine := make([]rune, 0, len(runes)+1)
+			newLine = append(newLine, runes[:e.cursor.X]...)
+			newLine = append(newLine, ch)
+			newLine = append(newLine, runes[e.cursor.X:]...)
+			e.buffer[e.cursor.Y] = string(newLine)
 			e.cursor.X++
 		}
 	}
@@ -449,14 +456,18 @@ func (e *Editor) pasteClip() {
 	}
 	lines := strings.Split(text, "\n")
 	if len(lines) == 1 {
-		line := e.buffer[e.cursor.Y]
-		e.buffer[e.cursor.Y] = line[:e.cursor.X] + lines[0] + line[e.cursor.X:]
+		runes := []rune(e.buffer[e.cursor.Y])
+		newLine := make([]rune, 0, len(runes)+len([]rune(lines[0])))
+		newLine = append(newLine, runes[:e.cursor.X]...)
+		newLine = append(newLine, []rune(lines[0])...)
+		newLine = append(newLine, runes[e.cursor.X:]...)
+		e.buffer[e.cursor.Y] = string(newLine)
 		e.cursor.X += len([]rune(lines[0]))
 	} else {
-		line := e.buffer[e.cursor.Y]
-		rest := line[e.cursor.X:]
+		runes := []rune(e.buffer[e.cursor.Y])
+		rest := string(runes[e.cursor.X:])
 		replacement := make([]string, len(lines))
-		replacement[0] = line[:e.cursor.X] + lines[0]
+		replacement[0] = string(runes[:e.cursor.X]) + lines[0]
 		for i := 1; i < len(lines)-1; i++ {
 			replacement[i] = lines[i]
 		}
@@ -472,6 +483,7 @@ func (e *Editor) pasteClip() {
 		e.cursor.X = len([]rune(lines[len(lines)-1]))
 	}
 	e.setModified()
+	e.msg("pasted")
 }
 
 func commentPrefix(lang string) string {
@@ -654,6 +666,7 @@ func (e *Editor) toggleComment() {
 	}
 	e.openFiles[e.activeTab].syntaxTokens = nil
 	e.setModified()
+	e.msg("comment toggled")
 }
 
 func (e *Editor) scanFiles() {

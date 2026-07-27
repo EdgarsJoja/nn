@@ -54,6 +54,7 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		lastY := len(e.buffer) - 1
 		lastX := e.lineLen(lastY)
 		e.selection = Selection{Start: Point{}, End: Point{X: lastX, Y: lastY}, Active: true}
+		e.msg("selected all")
 		return nil
 	case tcell.KeyCtrlD:
 		e.duplicateLine()
@@ -431,8 +432,8 @@ func (e *Editor) deleteBackward() {
 		return
 	}
 	if e.cursor.X > 0 {
-		line := e.buffer[e.cursor.Y]
-		e.buffer[e.cursor.Y] = line[:e.cursor.X-1] + line[e.cursor.X:]
+		runes := []rune(e.buffer[e.cursor.Y])
+		e.buffer[e.cursor.Y] = string(append(runes[:e.cursor.X-1], runes[e.cursor.X:]...))
 		e.cursor.X--
 		e.setModified()
 	} else if e.cursor.Y > 0 {
@@ -451,9 +452,9 @@ func (e *Editor) deleteForward() {
 		e.deleteSelection()
 		return
 	}
-	line := e.buffer[e.cursor.Y]
-	if e.cursor.X < len(line) {
-		e.buffer[e.cursor.Y] = line[:e.cursor.X] + line[e.cursor.X+1:]
+	runes := []rune(e.buffer[e.cursor.Y])
+	if e.cursor.X < len(runes) {
+		e.buffer[e.cursor.Y] = string(append(runes[:e.cursor.X], runes[e.cursor.X+1:]...))
 		e.setModified()
 	} else if e.cursor.Y < len(e.buffer)-1 {
 		e.buffer[e.cursor.Y] += e.buffer[e.cursor.Y+1]
@@ -480,6 +481,7 @@ func (e *Editor) deleteLine() {
 	e.cursorInBounds()
 	e.setModified()
 	e.selection = Selection{}
+	e.msg("deleted line")
 }
 
 func (e *Editor) duplicateLine() {
@@ -493,6 +495,7 @@ func (e *Editor) duplicateLine() {
 	e.cursor.X = 0
 	e.setModified()
 	e.selection = Selection{}
+	e.msg("duplicated line")
 }
 
 func (e *Editor) moveWordLeft() {
@@ -503,20 +506,20 @@ func (e *Editor) moveWordLeft() {
 		}
 		return
 	}
+	runes := []rune(e.buffer[e.cursor.Y])
 	x := e.cursor.X - 1
-	line := e.buffer[e.cursor.Y]
-	for x > 0 && (line[x] == ' ' || line[x] == '\t') {
+	for x > 0 && (runes[x] == ' ' || runes[x] == '\t') {
 		x--
 	}
-	for x > 0 && line[x-1] != ' ' && line[x-1] != '\t' {
+	for x > 0 && runes[x-1] != ' ' && runes[x-1] != '\t' {
 		x--
 	}
 	e.cursor.X = x
 }
 
 func (e *Editor) moveWordRight() {
-	line := e.buffer[e.cursor.Y]
-	if e.cursor.X >= len(line) {
+	runes := []rune(e.buffer[e.cursor.Y])
+	if e.cursor.X >= len(runes) {
 		if e.cursor.Y < len(e.buffer)-1 {
 			e.cursor.Y++
 			e.cursor.X = 0
@@ -524,10 +527,10 @@ func (e *Editor) moveWordRight() {
 		return
 	}
 	x := e.cursor.X
-	for x < len(line) && line[x] != ' ' && line[x] != '\t' {
+	for x < len(runes) && runes[x] != ' ' && runes[x] != '\t' {
 		x++
 	}
-	for x < len(line) && (line[x] == ' ' || line[x] == '\t') {
+	for x < len(runes) && (runes[x] == ' ' || runes[x] == '\t') {
 		x++
 	}
 	e.cursor.X = x
