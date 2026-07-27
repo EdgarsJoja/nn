@@ -455,18 +455,19 @@ func (e *Editor) pasteClip() {
 	} else {
 		line := e.buffer[e.cursor.Y]
 		rest := line[e.cursor.X:]
-		e.buffer[e.cursor.Y] = line[:e.cursor.X]
-		e.buffer[e.cursor.Y] += lines[0]
-		tail := make([]string, len(e.buffer[e.cursor.Y+1:]))
-		copy(tail, e.buffer[e.cursor.Y+1:])
-		e.buffer = append(e.buffer[:e.cursor.Y+1], "", "")
-		e.buffer = append(e.buffer, tail...)
+		replacement := make([]string, len(lines))
+		replacement[0] = line[:e.cursor.X] + lines[0]
 		for i := 1; i < len(lines)-1; i++ {
-			e.buffer = append(e.buffer[:e.cursor.Y+1+i], "", "")
-			e.buffer = append(e.buffer, e.buffer[e.cursor.Y+1+i+1:]...)
-			e.buffer[e.cursor.Y+1+i] = lines[i]
+			replacement[i] = lines[i]
 		}
-		e.buffer[e.cursor.Y+len(lines)-1] = lines[len(lines)-1] + rest
+		replacement[len(lines)-1] = lines[len(lines)-1] + rest
+		before := e.buffer[:e.cursor.Y]
+		after := e.buffer[e.cursor.Y+1:]
+		newBuf := make([]string, 0, len(before)+len(replacement)+len(after))
+		newBuf = append(newBuf, before...)
+		newBuf = append(newBuf, replacement...)
+		newBuf = append(newBuf, after...)
+		e.buffer = newBuf
 		e.cursor.Y += len(lines) - 1
 		e.cursor.X = len([]rune(lines[len(lines)-1]))
 	}
