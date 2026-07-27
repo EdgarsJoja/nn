@@ -377,27 +377,85 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 	modeEnd := len(modeTag)
 	nameX := modeEnd + 1
 
-	name := "[No Name]"
+	pathPart := ""
+	filePart := "[No Name]"
 	if e.filename != "" {
-		name = filepath.Base(e.filename)
+		dir := filepath.Dir(e.filename)
+		if dir != "." {
+			pathPart = dir + "/"
+		}
+		filePart = filepath.Base(e.filename)
 	}
+	const maxPathLen = 25
+	if len(pathPart) > maxPathLen {
+		parts := strings.Split(strings.TrimRight(pathPart, "/"), "/")
+		keep := parts[len(parts)-1] + "/"
+		for i := len(parts) - 2; i >= 0; i-- {
+			candidate := parts[i] + "/" + keep
+			if len(".../")+len(candidate) > maxPathLen {
+				break
+			}
+			keep = candidate
+		}
+		pathPart = ".../" + keep
+	}
+	fileFull := filePart
 	if e.modified {
-		name += " •"
+		fileFull += " •"
 	}
 
 	rightW := len(right)
 	availW := w - nameX - rightW
 
 	shortcutsX := nameX
-	if availW > len(name)+2 {
-		for cx, ch := range name {
-			sx := nameX + cx
-			if sx >= w {
-				break
+	if availW > 2 {
+		maxW := availW - 2
+
+		if pathPart == "" {
+			show := fileFull
+			if len(show) > maxW {
+				show = show[:maxW]
 			}
-			screen.SetContent(sx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colText))
+			for cx, ch := range show {
+				screen.SetContent(nameX+cx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colText))
+			}
+			shortcutsX = nameX + len(show)
+		} else {
+			fullStr := pathPart + fileFull
+			if len(fullStr) <= maxW {
+				for cx, ch := range pathPart {
+					screen.SetContent(nameX+cx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colSubtext0))
+				}
+				pLen := len(pathPart)
+				for cx, ch := range fileFull {
+					screen.SetContent(nameX+pLen+cx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(colText))
+				}
+				shortcutsX = nameX + len(fullStr)
+			} else {
+				dots := "..."
+				room := maxW - len(dots) - len(fileFull)
+				truncated := pathPart
+				if room > 0 && room < len(pathPart) {
+					truncated = pathPart[len(pathPart)-room:]
+					if idx := strings.Index(truncated, "/"); idx >= 0 {
+						truncated = truncated[idx:]
+					}
+				}
+				showStr := dots + truncated + fileFull
+				if len(showStr) > maxW {
+					showStr = showStr[:maxW]
+				}
+				mParts := len(dots + truncated)
+				for cx, ch := range showStr {
+					fg := colText
+					if cx < mParts {
+						fg = colSubtext0
+					}
+					screen.SetContent(nameX+cx, statusY, ch, nil, tcell.StyleDefault.Background(colSurface1).Foreground(fg))
+				}
+				shortcutsX = nameX + len(showStr)
+			}
 		}
-		shortcutsX = nameX + len(name)
 	}
 
 	maxShortcutW := (w - rightW) - shortcutsX - len(" F1 help ")
