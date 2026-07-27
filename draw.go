@@ -451,11 +451,10 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 
 func (e *Editor) scrollCursor() {
 	_, _, width, height := e.editorBox.GetRect()
-	sw := 0
+	ew := width
 	if e.showSidebar {
-		sw = e.sidebarWidth + 2
+		ew--
 	}
-	ew := width - sw
 	lnW := e.maxLineNumW() + 3
 	ew -= lnW
 	if ew < 1 {
