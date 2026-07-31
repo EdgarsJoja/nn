@@ -88,7 +88,7 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		if t.filename == "" {
 			label = "untitled"
 		}
-		if t.modified {
+		if t.hasGitChanges() {
 			label += " •"
 		}
 		seg := " " + label + " "
@@ -400,7 +400,7 @@ func (e *Editor) drawStatusBar(screen tcell.Screen) {
 		pathPart = ".../" + keep
 	}
 	fileFull := filePart
-	if e.modified {
+	if e.modified || (e.activeTab < len(e.openFiles) && e.openFiles[e.activeTab].hasGitChanges()) {
 		fileFull += " •"
 	}
 

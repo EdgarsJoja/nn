@@ -175,6 +175,16 @@ func (e *Editor) restoreTab(idx int) {
 	e.modified = t.modified
 	e.activeTab = idx
 	e.adjustTabOffset()
+	e.gitDirty = true
+}
+
+func (t *FileTab) hasGitChanges() bool {
+	for _, s := range t.gitLineStat {
+		if s != ' ' {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Editor) tabWidth(t *FileTab) int {
@@ -182,7 +192,7 @@ func (e *Editor) tabWidth(t *FileTab) int {
 	if t.filename == "" {
 		label = "untitled"
 	}
-	if t.modified {
+	if t.hasGitChanges() {
 		label += " •"
 	}
 	return len([]rune(" " + label + " ")) + 1

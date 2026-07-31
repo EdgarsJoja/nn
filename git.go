@@ -291,13 +291,13 @@ func (e *Editor) updateGitFileInfo() {
 
 	blob, err := tree.File(relPath)
 	if err != nil {
-		tab.gitLineStat = nil
+		tab.gitLineStat = computeLineStat("", e.buffer)
 		tab.headContent = ""
 		return
 	}
 	content, err := blob.Contents()
 	if err != nil {
-		tab.gitLineStat = nil
+		tab.gitLineStat = computeLineStat("", e.buffer)
 		tab.headContent = ""
 		return
 	}
@@ -308,7 +308,7 @@ func (e *Editor) updateGitFileInfo() {
 
 func (e *Editor) updateGitLineStat() {
 	tab := e.activeFile()
-	if tab == nil || tab.headContent == "" {
+	if tab == nil || e.git == nil || e.git.repo == nil {
 		return
 	}
 	tab.gitLineStat = computeLineStat(tab.headContent, e.buffer)
