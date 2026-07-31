@@ -938,7 +938,6 @@ func (e *Editor) Init() {
 	e.refreshDir()
 	e.buildLayout()
 	e.app.SetRoot(e.pages, true)
-	e.app.SetFocus(e.editorBox)
 	e.refreshGit()
 }
 
@@ -1124,6 +1123,12 @@ func main() {
 	e.Init()
 	if len(os.Args) > 1 {
 		e.loadFile(os.Args[1])
+	}
+	if e.openFiles[0].filename == "" {
+		e.mode = "sidebar"
+		e.app.SetFocus(e.sidebar)
+	} else {
+		e.app.SetFocus(e.editorBox)
 	}
 	if err := e.Run(); err != nil {
 		log.Fatal(err)
