@@ -379,9 +379,18 @@ func (e *Editor) insertText(text string) {
 			copy(tail, e.buffer[e.cursor.Y+1:])
 			e.buffer = append(e.buffer[:e.cursor.Y+1], "")
 			e.buffer = append(e.buffer, tail...)
+			var indent string
+			if e.cursor.X > 0 {
+				indent = leadingWhitespace(runes)
+				rest = indent + strings.TrimLeft(rest, " \t")
+			}
 			e.buffer[e.cursor.Y+1] = rest
 			e.cursor.Y++
-			e.cursor.X = 0
+			if e.cursor.X > 0 {
+				e.cursor.X = len([]rune(indent))
+			} else {
+				e.cursor.X = 0
+			}
 		} else {
 			runes := []rune(e.buffer[e.cursor.Y])
 			newLine := make([]rune, 0, len(runes)+1)
@@ -1205,4 +1214,16 @@ func (e *Editor) fuzzyEnd() {
 	if e.fuzzyIdx >= e.fuzzyOff+maxResults {
 		e.fuzzyOff = e.fuzzyIdx - maxResults + 1
 	}
+}
+
+func leadingWhitespace(runes []rune) string {
+	var ws []rune
+	for _, r := range runes {
+		if r == ' ' || r == '\t' {
+			ws = append(ws, r)
+		} else {
+			break
+		}
+	}
+	return string(ws)
 }
