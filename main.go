@@ -590,6 +590,32 @@ func (e *Editor) cursorInBounds() {
 	e.cursor.X = clamp(e.cursor.X, 0, e.lineLen(e.cursor.Y))
 }
 
+func (e *Editor) centerOnCursor() {
+	_, _, _, height := e.editorBox.GetRect()
+	ch := height - 1
+	e.offset.Y = e.cursor.Y - ch/2
+	if e.offset.Y < 0 {
+		e.offset.Y = 0
+	}
+	_, _, width, _ := e.editorBox.GetRect()
+	ew := width
+	if e.showSidebar {
+		ew--
+	}
+	lnW := e.maxLineNumW() + 3
+	ew -= lnW
+	if ew < 1 {
+		ew = 1
+	}
+	line := []rune(e.buffer[e.cursor.Y])
+	cursorDisp := bufToDisp(line, e.cursor.X)
+	wantDisp := cursorDisp - ew/2
+	if wantDisp < 0 {
+		wantDisp = 0
+	}
+	e.offset.X = dispToBuf(line, wantDisp)
+}
+
 func (e *Editor) maxLineNumW() int {
 	n := len(e.buffer)
 	w := 1

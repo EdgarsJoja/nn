@@ -51,8 +51,15 @@ const (
 	opDeleteFd = 3
 )
 
+func undoGroup(op int) int {
+	if op == opDeleteBk || op == opDeleteFd {
+		return opDeleteBk
+	}
+	return op
+}
+
 func (e *Editor) saveUndoState(op int) {
-	if op == e.lastOp && len(e.undoStack) > 0 {
+	if op != opNone && undoGroup(op) == undoGroup(e.lastOp) && len(e.undoStack) > 0 {
 		return
 	}
 	state := undoState{
@@ -71,6 +78,7 @@ func (e *Editor) saveUndoState(op int) {
 
 func (e *Editor) undo() {
 	if len(e.undoStack) == 0 {
+		e.msg("no undo history")
 		return
 	}
 	redo := undoState{
@@ -95,12 +103,14 @@ func (e *Editor) undo() {
 	e.openFiles[e.activeTab].syntaxTokens = nil
 	e.lastOp = opNone
 	e.cursorInBounds()
+	e.centerOnCursor()
 	e.updateGitLineStat()
 	e.msg("undo")
 }
 
 func (e *Editor) redo() {
 	if len(e.redoStack) == 0 {
+		e.msg("no redo history")
 		return
 	}
 	undo := undoState{
@@ -125,6 +135,7 @@ func (e *Editor) redo() {
 	e.openFiles[e.activeTab].syntaxTokens = nil
 	e.lastOp = opNone
 	e.cursorInBounds()
+	e.centerOnCursor()
 	e.updateGitLineStat()
 	e.msg("redo")
 }
