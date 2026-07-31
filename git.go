@@ -17,6 +17,91 @@ type gitInfo struct {
 	wt     *git.Worktree
 }
 
+type editOp struct {
+	op          byte   // '=', '-', '+'
+	aLine, bLine int   // line index in headLines / buffer
+}
+
+func myersDiff(a, b []string) []editOp {
+	n, m := len(a), len(b)
+	maxD := n + m
+	offset := maxD
+	v := make([]int, 2*maxD+1)
+	var trace [][]int
+
+	for d := 0; d <= maxD; d++ {
+		for k := -d; k <= d; k += 2 {
+			var x int
+			if k == -d || (k != d && v[k-1+offset] < v[k+1+offset]) {
+				x = v[k+1+offset]
+			} else {
+				x = v[k-1+offset] + 1
+			}
+			y := x - k
+			for x < n && y < m && a[x] == b[y] {
+				x++
+				y++
+			}
+			v[k+offset] = x
+			if x >= n && y >= m {
+				vv := make([]int, len(v))
+				copy(vv, v)
+				trace = append(trace, vv)
+				return myersBacktrack(a, b, trace, offset, n, m)
+			}
+		}
+		vv := make([]int, len(v))
+		copy(vv, v)
+		trace = append(trace, vv)
+	}
+	return nil
+}
+
+func myersBacktrack(a, b []string, trace [][]int, offset, n, m int) []editOp {
+	var ops []editOp
+	x, y := n, m
+
+	for d := len(trace) - 1; d >= 1; d-- {
+		k := x - y
+		prevV := trace[d-1]
+		var prevK int
+		var wasDeletion bool
+		if k == -d || (k != d && prevV[k-1+offset] < prevV[k+1+offset]) {
+			prevK = k + 1
+			wasDeletion = false
+		} else {
+			prevK = k - 1
+			wasDeletion = true
+		}
+		prevX := prevV[prevK+offset]
+		prevY := prevX - prevK
+
+		for x > prevX && y > prevY {
+			x--
+			y--
+			ops = append(ops, editOp{op: '=', aLine: x, bLine: y})
+		}
+		if wasDeletion {
+			x--
+			ops = append(ops, editOp{op: '-', aLine: x})
+		} else {
+			y--
+			ops = append(ops, editOp{op: '+', bLine: y})
+		}
+	}
+
+	for x > 0 && y > 0 {
+		x--
+		y--
+		ops = append(ops, editOp{op: '=', aLine: x, bLine: y})
+	}
+
+	for i, j := 0, len(ops)-1; i < j; i, j = i+1, j-1 {
+		ops[i], ops[j] = ops[j], ops[i]
+	}
+	return ops
+}
+
 func computeLineStat(headContent string, buffer []string) []byte {
 	headLines := strings.Split(headContent, "\n")
 	if len(headLines) == 1 && headLines[0] == "" {
@@ -33,94 +118,36 @@ func computeLineStat(headContent string, buffer []string) []byte {
 		stat[i] = '+'
 	}
 
-	// Forward: match identical lines from the start
-	hp, bp := 0, 0
-	for hp < len(headLines) && bp < len(buf) && headLines[hp] == buf[bp] {
-		stat[bp] = ' '
-		hp++
-		bp++
+	ops := myersDiff(headLines, buf)
+
+	for _, op := range ops {
+		if op.op == '=' {
+			stat[op.bLine] = ' '
+		}
 	}
 
-	// Backward scan with a safety limit: only match up to the
-	// number of remaining lines in the shorter tail. This prevents
-	// matching shifted duplicate lines (e.g. blank lines).
-	ti, tj := len(headLines)-1, len(buf)-1
-	maxBack := ti - hp + 1
-	if tj-bp+1 < maxBack {
-		maxBack = tj - bp + 1
-	}
-
-	backCount := 0
-	for ti >= hp && tj >= bp && headLines[ti] == buf[tj] && backCount < maxBack {
-		ti--
-		tj--
-		backCount++
-	}
-
-	// At this point ti and tj have been decremented from the last
-	// non-matching position. Re-increment to get the true match boundaries.
-	ti++
-	tj++
-
-	// Middle section: process from bp to tj-1 (head from hp to ti-1)
-	// Use lookahead matching to handle insertions/deletions
-	for bp < tj && hp < ti {
-		if buf[bp] == headLines[hp] {
-			stat[bp] = ' '
-			hp++
-			bp++
+	i := 0
+	for i < len(ops) {
+		if ops[i].op == '=' {
+			i++
 			continue
 		}
-
-		// Look ahead in head for buf[bp]
-		foundHead := -1
-		for k := hp + 1; k < ti && k <= hp+10; k++ {
-			if headLines[k] == buf[bp] {
-				foundHead = k
-				break
+		hasDelete := false
+		j := i
+		for j < len(ops) && ops[j].op != '=' {
+			if ops[j].op == '-' {
+				hasDelete = true
+			}
+			j++
+		}
+		for k := i; k < j; k++ {
+			if ops[k].op == '+' {
+				if hasDelete {
+					stat[ops[k].bLine] = '~'
+				}
 			}
 		}
-
-		// Look ahead in buf for headLines[hp]
-		foundBuf := -1
-		for k := bp + 1; k < tj && k <= bp+10; k++ {
-			if buf[k] == headLines[hp] {
-				foundBuf = k
-				break
-			}
-		}
-
-		if foundHead != -1 && foundBuf != -1 {
-			// Both match ahead — mark as changed
-			stat[bp] = '~'
-			hp++
-			bp++
-		} else if foundHead != -1 {
-			// buf[bp] matches a later head line → head lines were deleted
-			stat[bp] = '~'
-			hp++
-		} else if foundBuf != -1 {
-			// headLines[hp] matches a later buf line → buf lines were added
-			stat[bp] = '+'
-			bp++
-		} else {
-			// Neither matches ahead — lines are different
-			stat[bp] = '~'
-			hp++
-			bp++
-		}
-	}
-
-	// Remaining buffer lines are added
-	for bp < tj {
-		stat[bp] = '+'
-		bp++
-	}
-
-	// Tail from tj onward is all matched
-	for bp < len(buf) {
-		stat[bp] = ' '
-		bp++
+		i = j
 	}
 
 	return stat
