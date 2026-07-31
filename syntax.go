@@ -183,6 +183,10 @@ func (e *Editor) tokenizeBuffer() {
 	}
 
 	text := strings.Join(e.buffer, "\n")
+	if len(text) > 1024*1024 {
+		tab.syntaxTokens = []syntaxToken{}
+		return
+	}
 
 	iterator, err := lexer.Tokenise(nil, text)
 	if err != nil {

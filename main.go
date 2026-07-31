@@ -131,8 +131,10 @@ func (e *Editor) submitInput() {
 		e.loadFile(val)
 	case "new":
 		e.saveCurrentTab()
+		absPath, _ := filepath.Abs(val)
 		e.openFiles = append(e.openFiles, &FileTab{
 			filename: val,
+			filepath: absPath,
 			buffer:   []string{""},
 		})
 		e.restoreTab(len(e.openFiles) - 1)

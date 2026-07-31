@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -291,12 +292,24 @@ func (e *Editor) updateGitFileInfo() {
 
 	blob, err := tree.File(relPath)
 	if err != nil {
+		_, inStatus := e.git.status[relPath]
+		if !inStatus {
+			tab.gitLineStat = nil
+			tab.headContent = ""
+			return
+		}
 		tab.gitLineStat = computeLineStat("", e.buffer)
 		tab.headContent = ""
 		return
 	}
 	content, err := blob.Contents()
 	if err != nil {
+		_, inStatus := e.git.status[relPath]
+		if !inStatus {
+			tab.gitLineStat = nil
+			tab.headContent = ""
+			return
+		}
 		tab.gitLineStat = computeLineStat("", e.buffer)
 		tab.headContent = ""
 		return
@@ -309,6 +322,9 @@ func (e *Editor) updateGitFileInfo() {
 func (e *Editor) updateGitLineStat() {
 	tab := e.activeFile()
 	if tab == nil || e.git == nil || e.git.repo == nil {
+		return
+	}
+	if tab.headContent == "" && tab.gitLineStat == nil {
 		return
 	}
 	tab.gitLineStat = computeLineStat(tab.headContent, e.buffer)
@@ -331,6 +347,24 @@ func (e *Editor) sidebarGitColor(name string) (tcell.Color, bool) {
 
 	s, ok := e.git.status[rel]
 	if !ok {
+		// File not in git status — could be gitignored but still have local changes
+		if _, err := os.Stat(fullPath); err == nil && e.activeTab < len(e.openFiles) && len(e.openFiles[e.activeTab].gitLineStat) > 0 {
+			tabPath := e.openFiles[e.activeTab].filepath
+			if tabPath == "" {
+				tabPath = e.openFiles[e.activeTab].filename
+			}
+			absTabPath, err := filepath.Abs(tabPath)
+			if err == nil {
+				tabRel, err := filepath.Rel(e.git.root, absTabPath)
+				if err == nil && filepath.ToSlash(tabRel) == rel {
+					for _, st := range e.openFiles[e.activeTab].gitLineStat {
+						if st != ' ' {
+							return colNumber, true
+						}
+					}
+				}
+			}
+		}
 		return 0, false
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -178,21 +179,12 @@ func (e *Editor) restoreTab(idx int) {
 	e.gitDirty = true
 }
 
-func (t *FileTab) hasGitChanges() bool {
-	for _, s := range t.gitLineStat {
-		if s != ' ' {
-			return true
-		}
-	}
-	return false
-}
-
 func (e *Editor) tabWidth(t *FileTab) int {
 	label := filepath.Base(t.filename)
 	if t.filename == "" {
 		label = "untitled"
 	}
-	if t.hasGitChanges() {
+	if t.modified {
 		label += " •"
 	}
 	return len([]rune(" " + label + " ")) + 1
@@ -274,7 +266,32 @@ func (e *Editor) closeTab() {
 	e.msg("closed tab")
 }
 
+const maxFileSize = 10 * 1024 * 1024
+
+func isValidBuffer(buf []string) bool {
+	if len(buf) > 100000 {
+		return false
+	}
+	for _, line := range buf {
+		if len([]rune(line)) > 10000 {
+			return false
+		}
+	}
+	return true
+}
+
 func (e *Editor) loadFile(path string) {
+	fi, err := os.Stat(path)
+	if err == nil && fi.Size() > maxFileSize {
+		e.msg("error: file too large (" + fmt.Sprintf("%d", fi.Size()/(1024*1024)) + "MB, max 10MB)")
+		return
+	}
+
+	if isBinaryContent(path) {
+		e.msg("error: cannot open binary file")
+		return
+	}
+
 	for i, tab := range e.openFiles {
 		if tab.filename == path {
 			e.saveCurrentTab()
@@ -296,7 +313,13 @@ func (e *Editor) loadFile(path string) {
 		if len(tab.buffer) == 0 {
 			tab.buffer = []string{""}
 		}
+		if !isValidBuffer(tab.buffer) {
+			tab.buffer = []string{""}
+			e.msg("error: file has too many lines or a line is too long")
+			return
+		}
 		tab.filename = path
+		tab.filepath, _ = filepath.Abs(path)
 		tab.syntaxTokens = nil
 		e.undoStack = nil
 		e.redoStack = nil
@@ -317,8 +340,14 @@ func (e *Editor) loadFile(path string) {
 	if len(buf) == 0 {
 		buf = []string{""}
 	}
+	if !isValidBuffer(buf) {
+		e.msg("error: file has too many lines or a line is too long")
+		return
+	}
+	absPath, _ := filepath.Abs(path)
 	e.openFiles = append(e.openFiles, &FileTab{
 		filename:     path,
+		filepath:     absPath,
 		buffer:       buf,
 		syntaxTokens: nil,
 	})
