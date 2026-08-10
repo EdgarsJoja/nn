@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,20 @@ type gitInfo struct {
 type editOp struct {
 	op          byte   // '=', '-', '+'
 	aLine, bLine int   // line index in headLines / buffer
+}
+
+type diffLine struct {
+	op     byte   // ' ', '+', '-'
+	text   string
+	oldNum int    // 1-indexed line in HEAD, 0 for added lines
+	newNum int    // 1-indexed line in buffer, 0 for deleted
+	hunkIdx int   // index into diffHunks
+}
+
+type diffHunk struct {
+	oldStart, oldEnd int   // 0-indexed range in headLines
+	newStart, newEnd int   // 0-indexed range in buffer
+	lines []diffLine
 }
 
 func myersDiff(a, b []string) []editOp {
@@ -101,6 +116,110 @@ func myersBacktrack(a, b []string, trace [][]int, offset, n, m int) []editOp {
 		ops[i], ops[j] = ops[j], ops[i]
 	}
 	return ops
+}
+
+func computeDiff(headContent string, buffer []string) []diffHunk {
+	headLines := strings.Split(headContent, "\n")
+	if len(headLines) == 1 && headLines[0] == "" {
+		headLines = nil
+	}
+	buf := buffer
+	if len(buf) > 0 && buf[len(buf)-1] == "" && len(headLines) > 0 && headLines[len(headLines)-1] != "" {
+		buf = buf[:len(buf)-1]
+	}
+
+	ops := myersDiff(headLines, buf)
+	if len(ops) == 0 {
+		return nil
+	}
+
+	headLine := 0
+	bufLine := 0
+	var hunks []diffHunk
+	hunkIdx := 0
+
+	i := 0
+	for i < len(ops) {
+		if ops[i].op == '=' {
+			headLine++
+			bufLine++
+			i++
+			continue
+		}
+
+		hunk := diffHunk{
+			oldStart: headLine,
+			newStart: bufLine,
+		}
+
+		const contextLines = 2
+		ctxBefore := 0
+		for ctxBefore < contextLines && i-ctxBefore-1 >= 0 && ops[i-ctxBefore-1].op == '=' {
+			ctxBefore++
+		}
+		for c := ctxBefore; c > 0; c-- {
+			op := ops[i-c]
+			hunk.lines = append(hunk.lines, diffLine{
+				op:      ' ',
+				text:    headLines[op.aLine],
+				oldNum:  op.aLine + 1,
+				newNum:  op.bLine + 1,
+				hunkIdx: hunkIdx,
+			})
+		}
+		hunk.oldStart = headLine - ctxBefore
+		hunk.newStart = bufLine - ctxBefore
+
+		for i < len(ops) && ops[i].op != '=' {
+			op := ops[i]
+			switch op.op {
+			case '-':
+				hunk.lines = append(hunk.lines, diffLine{
+					op:      '-',
+					text:    headLines[op.aLine],
+					oldNum:  op.aLine + 1,
+					newNum:  0,
+					hunkIdx: hunkIdx,
+				})
+				headLine++
+			case '+':
+				hunk.lines = append(hunk.lines, diffLine{
+					op:      '+',
+					text:    buf[op.bLine],
+					oldNum:  0,
+					newNum:  op.bLine + 1,
+					hunkIdx: hunkIdx,
+				})
+				bufLine++
+			}
+			i++
+		}
+
+		ctxAfter := 0
+		for ctxAfter < contextLines && i+ctxAfter < len(ops) && ops[i+ctxAfter].op == '=' {
+			ctxAfter++
+		}
+		for c := 0; c < ctxAfter; c++ {
+			op := ops[i+c]
+			hunk.lines = append(hunk.lines, diffLine{
+				op:      ' ',
+				text:    headLines[op.aLine],
+				oldNum:  op.aLine + 1,
+				newNum:  op.bLine + 1,
+				hunkIdx: hunkIdx,
+			})
+			headLine++
+			bufLine++
+		}
+
+		hunk.oldEnd = headLine - ctxAfter
+		hunk.newEnd = bufLine - ctxAfter
+		hunks = append(hunks, hunk)
+		hunkIdx++
+		i += ctxAfter
+	}
+
+	return hunks
 }
 
 func computeLineStat(headContent string, buffer []string) []byte {
@@ -401,4 +520,151 @@ func (e *Editor) sidebarGitColor(name string) (tcell.Color, bool) {
 		return colRed, true
 	}
 	return 0, false
+}
+
+func (e *Editor) cmdDiff() {
+	if e.filename == "" {
+		e.msg("diff: no file")
+		return
+	}
+	tab := e.activeFile()
+	if tab.headContent == "" {
+		e.msg("diff: no committed version to compare against")
+		return
+	}
+	e.diffHunks = computeDiff(tab.headContent, e.buffer)
+	if len(e.diffHunks) == 0 {
+		e.msg("diff: no changes")
+		return
+	}
+	e.diffLines = nil
+	for _, h := range e.diffHunks {
+		e.diffLines = append(e.diffLines, h.lines...)
+	}
+	e.diffIdx = 0
+	e.diffOff = 0
+	e.showDiff = true
+	e.msg(fmt.Sprintf("diff: %d hunk(s)", len(e.diffHunks)))
+}
+
+func (e *Editor) diffRevertHunk() {
+	if e.diffIdx < 0 || e.diffIdx >= len(e.diffHunks) {
+		return
+	}
+	hunk := e.diffHunks[e.diffIdx]
+	tab := e.activeFile()
+	if tab.headContent == "" {
+		return
+	}
+
+	headLines := strings.Split(tab.headContent, "\n")
+	if len(headLines) == 1 && headLines[0] == "" {
+		headLines = nil
+	}
+
+	oldLines := headLines[hunk.oldStart:hunk.oldEnd]
+
+	e.saveUndoState(opNone)
+
+	before := make([]string, hunk.newStart)
+	copy(before, e.buffer[:hunk.newStart])
+	after := make([]string, len(e.buffer)-hunk.newEnd)
+	copy(after, e.buffer[hunk.newEnd:])
+
+	newBuf := make([]string, 0, len(before)+len(oldLines)+len(after))
+	newBuf = append(newBuf, before...)
+	newBuf = append(newBuf, oldLines...)
+	newBuf = append(newBuf, after...)
+	if len(newBuf) == 0 {
+		newBuf = []string{""}
+	}
+	e.buffer = newBuf
+	e.cursorInBounds()
+	e.setModified()
+
+	e.diffHunks = computeDiff(tab.headContent, e.buffer)
+	e.diffLines = nil
+	for _, h := range e.diffHunks {
+		e.diffLines = append(e.diffLines, h.lines...)
+	}
+	if e.diffIdx >= len(e.diffHunks) {
+		e.diffIdx = len(e.diffHunks) - 1
+	}
+	if len(e.diffHunks) == 0 {
+		e.showDiff = false
+		e.msg("diff: all hunks reverted")
+	}
+}
+
+func (e *Editor) diffUp() {
+	if e.diffIdx > 0 {
+		e.diffIdx--
+	}
+	// find first line of the hunk
+	for i, dl := range e.diffLines {
+		if dl.hunkIdx == e.diffIdx {
+			e.diffOff = i
+			break
+		}
+	}
+}
+
+func (e *Editor) diffDown() {
+	if e.diffIdx < len(e.diffHunks)-1 {
+		e.diffIdx++
+	}
+	// find first line of the hunk
+	for i, dl := range e.diffLines {
+		if dl.hunkIdx == e.diffIdx {
+			e.diffOff = i
+			break
+		}
+	}
+}
+
+func (e *Editor) diffPgUp() {
+	rows := e.diffRowCount()
+	e.diffOff -= rows
+	if e.diffOff < 0 {
+		e.diffOff = 0
+	}
+	if len(e.diffLines) > 0 {
+		e.diffIdx = e.diffLines[e.diffOff].hunkIdx
+	}
+}
+
+func (e *Editor) diffPgDn() {
+	rows := e.diffRowCount()
+	e.diffOff += rows
+	last := len(e.diffLines) - 1
+	if e.diffOff > last {
+		e.diffOff = last
+	}
+	if len(e.diffLines) > 0 {
+		e.diffIdx = e.diffLines[e.diffOff].hunkIdx
+	}
+}
+
+func (e *Editor) diffHome() {
+	e.diffOff = 0
+	if len(e.diffLines) > 0 {
+		e.diffIdx = e.diffLines[0].hunkIdx
+	}
+}
+
+func (e *Editor) diffEnd() {
+	last := len(e.diffLines) - 1
+	if last >= 0 {
+		e.diffOff = last
+		e.diffIdx = e.diffLines[last].hunkIdx
+	}
+}
+
+func (e *Editor) diffRowCount() int {
+	_, _, _, h := e.editorBox.GetRect()
+	boxH := h - 4
+	if boxH < 4 {
+		boxH = 4
+	}
+	return boxH
 }

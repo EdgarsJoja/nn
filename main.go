@@ -97,6 +97,12 @@ type Editor struct {
 	themePickerIdx    int
 	themePickerOff    int
 	themePickerPrevIdx int
+
+	showDiff  bool
+	diffHunks []diffHunk
+	diffLines []diffLine
+	diffIdx   int
+	diffOff   int
 }
 
 func (e *Editor) msg(text string) {
@@ -872,6 +878,36 @@ func (e *Editor) Init() {
 			}
 			return nil
 		}
+		if e.showDiff {
+			switch event.Key() {
+			case tcell.KeyEscape:
+				e.showDiff = false
+				e.msg("")
+				return nil
+			case tcell.KeyUp:
+				e.diffUp()
+				return nil
+			case tcell.KeyDown:
+				e.diffDown()
+				return nil
+			case tcell.KeyPgUp:
+				e.diffPgUp()
+				return nil
+			case tcell.KeyPgDn:
+				e.diffPgDn()
+				return nil
+			case tcell.KeyHome:
+				e.diffHome()
+				return nil
+			case tcell.KeyEnd:
+				e.diffEnd()
+				return nil
+			case tcell.KeyEnter:
+				e.diffRevertHunk()
+				return nil
+			}
+			return nil
+		}
 		if e.showHelp {
 			switch event.Key() {
 			case tcell.KeyEscape, tcell.KeyF1:
@@ -1037,6 +1073,7 @@ func (e *Editor) makeWidgets() {
 		"    Ctrl+R                 Toggle dotfiles",
 		"    Ctrl+Q                 Quit",
 		"    Alt+T                  Theme picker",
+		"    Alt+D                  Diff view (revert hunks)",
 		"    Alt+Left / Right       Switch tabs",
 		"    Shift+Alt+Left/Right   Resize sidebar",
 		"",

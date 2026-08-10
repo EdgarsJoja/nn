@@ -17,8 +17,19 @@ func (e *Editor) handleEditorKey(event *tcell.EventKey) *tcell.EventKey {
 		return event
 	}
 
+	if e.showDiff {
+		return event
+	}
+
 	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 && (event.Rune() == 't' || event.Rune() == 'T') {
 		e.cmdThemePicker()
+		return nil
+	}
+
+	if key == tcell.KeyRune && mod&tcell.ModAlt != 0 && (event.Rune() == 'd' || event.Rune() == 'D') {
+		if !e.showDiff {
+			e.cmdDiff()
+		}
 		return nil
 	}
 

@@ -243,6 +243,11 @@ func (e *Editor) drawEditor(screen tcell.Screen, x, y, width, height int) (int, 
 		e.drawThemePicker(screen)
 	}
 
+	if e.showDiff {
+		screen.HideCursor()
+		e.drawDiffView(screen)
+	}
+
 	return x, y, width, height
 }
 
@@ -1052,6 +1057,147 @@ func (e *Editor) drawThemePicker(screen tcell.Screen) {
 	helpRunes := []rune(help)
 	helpY := boxY + boxH - 1
 	for dx, ch := range helpRunes {
+		sx := boxX + 1 + dx
+		if sx >= boxX+boxW-1 {
+			break
+		}
+		screen.SetContent(sx, helpY, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(colSubtext0))
+	}
+}
+
+func (e *Editor) drawDiffView(screen tcell.Screen) {
+	w, h := screen.Size()
+
+	margin := 2
+	boxW := w - margin*2
+	if boxW < 40 {
+		boxW = 40
+	}
+	boxH := h - margin*2
+	if boxH < 10 {
+		boxH = 10
+	}
+	boxX := margin
+	boxY := margin
+
+	contentH := boxH - 2
+	contentW := boxW - 2
+
+	topLeft, topRight, botLeft, botRight := '╭', '╮', '╰', '╯'
+	hoz, vert := '─', '│'
+
+	for dy := 0; dy < boxH; dy++ {
+		for dx := 0; dx < boxW; dx++ {
+			sx := boxX + dx
+			sy := boxY + dy
+			if sx < 0 || sx >= w || sy < 0 || sy >= h {
+				continue
+			}
+			ch := ' '
+			fg := colOverlay0
+			bg := colSurface0
+			switch {
+			case dy == 0 && dx == 0:
+				ch = topLeft
+			case dy == 0 && dx == boxW-1:
+				ch = topRight
+			case dy == boxH-1 && dx == 0:
+				ch = botLeft
+			case dy == boxH-1 && dx == boxW-1:
+				ch = botRight
+			case dy == 0 || dy == boxH-1:
+				ch = hoz
+			case dx == 0 || dx == boxW-1:
+				ch = vert
+			default:
+				fg = colText
+				if dy == 1 {
+					bg = colMantle
+					fg = colBlue
+				}
+			}
+			st := tcell.StyleDefault.Background(bg).Foreground(fg)
+			screen.SetContent(sx, sy, ch, nil, st)
+		}
+	}
+
+	title := " DIFF "
+	for dx, ch := range title {
+		screen.SetContent(boxX+1+dx, boxY, ch, nil, tcell.StyleDefault.Background(colSurface0).Foreground(colBlue))
+	}
+
+	lineY := boxY + 1
+
+	for i := e.diffOff; i < len(e.diffLines) && lineY < boxY+boxH-1; i++ {
+		dl := e.diffLines[i]
+		isCur := dl.hunkIdx == e.diffIdx
+
+		bg := colSurface0
+		fg := colText
+		prefix := ' '
+
+		switch dl.op {
+		case '-':
+			fg = colRed
+			prefix = '─'
+			if isCur {
+				bg = colSurface1
+			}
+		case '+':
+			fg = colGreen
+			prefix = '+'
+			if isCur {
+				bg = colSurface1
+			}
+		default:
+			prefix = ' '
+			if isCur {
+				bg = colSurface1
+			}
+		}
+
+		text := []rune{prefix, ' '}
+		text = append(text, []rune(dl.text)...)
+		if len(text) > contentW {
+			text = text[:contentW]
+		}
+		for dx, ch := range text {
+			sx := boxX + 1 + dx
+			st := tcell.StyleDefault.Background(bg).Foreground(fg)
+			if dl.op == '-' && isCur {
+				if ch == '─' {
+					st = tcell.StyleDefault.Background(bg).Foreground(colRed)
+				} else {
+					st = tcell.StyleDefault.Background(bg).Foreground(colText)
+				}
+			}
+			screen.SetContent(sx, lineY, ch, nil, st)
+		}
+		for dx := len(text); dx < contentW; dx++ {
+			screen.SetContent(boxX+1+dx, lineY, ' ', nil, tcell.StyleDefault.Background(bg))
+		}
+		lineY++
+	}
+
+	total := len(e.diffLines)
+	if total > contentH {
+		scrollH := contentH
+		scrollable := total - contentH
+		thumbPos := 0
+		if scrollable > 0 {
+			thumbPos = (e.diffOff * scrollH) / scrollable
+		}
+		if thumbPos >= scrollH {
+			thumbPos = scrollH - 1
+		}
+		sy := boxY + 2 + thumbPos
+		if sy < boxY+boxH-1 {
+			screen.SetContent(boxX+boxW-1, sy, '▓', nil, tcell.StyleDefault.Background(colSurface0).Foreground(colOverlay0))
+		}
+	}
+	help := fmt.Sprintf(" %d/%d  ·  ↑↓ hunk  ·  Enter revert  ·  Esc close ", e.diffIdx+1, len(e.diffHunks))
+	helpY := boxY + boxH - 1
+	for dx, ch := range help {
 		sx := boxX + 1 + dx
 		if sx >= boxX+boxW-1 {
 			break
