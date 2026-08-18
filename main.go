@@ -137,9 +137,10 @@ func (e *Editor) submitInput() {
 		e.loadFile(val)
 	case "new":
 		e.saveCurrentTab()
-		absPath, _ := filepath.Abs(val)
+		newPath := filepath.Join(e.sidebarDir, val)
+		absPath, _ := filepath.Abs(newPath)
 		e.openFiles = append(e.openFiles, &FileTab{
-			filename: val,
+			filename: newPath,
 			filepath: absPath,
 			buffer:   []string{""},
 		})
@@ -147,7 +148,7 @@ func (e *Editor) submitInput() {
 		e.refreshDir()
 		e.mode = "editor"
 		e.app.SetFocus(e.editorBox)
-		e.msg("new file: " + val)
+		e.msg("new file: " + newPath)
 	case "confirm":
 		if val == "y" || val == "Y" {
 			if err := os.RemoveAll(e.pendingDelPath); err != nil {
