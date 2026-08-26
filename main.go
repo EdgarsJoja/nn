@@ -254,10 +254,12 @@ func (e *Editor) textSearchOpen() {
 	}
 	r := e.textSearchResults[e.textSearchIdx]
 	path := filepath.Join(e.initialDir, r.filePath)
+	if !e.loadFile(path) {
+		return
+	}
 	e.showTextSearch = false
 	e.mode = "editor"
 	e.app.SetFocus(e.editorBox)
-	e.loadFile(path)
 	for y := range e.buffer {
 		if y+1 == r.lineNum {
 			e.cursor.Y = y
@@ -693,9 +695,10 @@ func (e *Editor) onSidebarSelectItem(idx int) {
 		e.app.SetFocus(e.sidebar)
 		return
 	}
-	e.loadFile(p)
-	e.mode = "editor"
-	e.app.SetFocus(e.editorBox)
+	if e.loadFile(p) {
+		e.mode = "editor"
+		e.app.SetFocus(e.editorBox)
+	}
 }
 
 func (e *Editor) sidebarEnterDir() {

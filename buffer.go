@@ -280,16 +280,16 @@ func isValidBuffer(buf []string) bool {
 	return true
 }
 
-func (e *Editor) loadFile(path string) {
+func (e *Editor) loadFile(path string) bool {
 	fi, err := os.Stat(path)
 	if err == nil && fi.Size() > maxFileSize {
 		e.msg("error: file too large (" + fmt.Sprintf("%d", fi.Size()/(1024*1024)) + "MB, max 10MB)")
-		return
+		return false
 	}
 
 	if isBinaryContent(path) {
 		e.msg("error: cannot open binary file")
-		return
+		return false
 	}
 
 	for i, tab := range e.openFiles {
@@ -298,7 +298,7 @@ func (e *Editor) loadFile(path string) {
 			e.restoreTab(i)
 			e.msg("switched to " + filepath.Base(path))
 			e.refreshGit()
-			return
+			return true
 		}
 	}
 
@@ -307,7 +307,7 @@ func (e *Editor) loadFile(path string) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			e.msg("error: " + err.Error())
-			return
+			return false
 		}
 		tab.buffer = strings.Split(string(data), "\n")
 		if len(tab.buffer) == 0 {
@@ -316,7 +316,7 @@ func (e *Editor) loadFile(path string) {
 		if !isValidBuffer(tab.buffer) {
 			tab.buffer = []string{""}
 			e.msg("error: file has too many lines or a line is too long")
-			return
+			return false
 		}
 		tab.filename = path
 		tab.filepath, _ = filepath.Abs(path)
@@ -326,13 +326,13 @@ func (e *Editor) loadFile(path string) {
 		e.restoreTab(0)
 		e.msg("opened " + filepath.Base(path))
 		e.refreshGit()
-		return
+		return true
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		e.msg("error: " + err.Error())
-		return
+		return false
 	}
 	e.saveCurrentTab()
 	content := string(data)
@@ -342,7 +342,7 @@ func (e *Editor) loadFile(path string) {
 	}
 	if !isValidBuffer(buf) {
 		e.msg("error: file has too many lines or a line is too long")
-		return
+		return false
 	}
 	absPath, _ := filepath.Abs(path)
 	e.openFiles = append(e.openFiles, &FileTab{
@@ -356,6 +356,7 @@ func (e *Editor) loadFile(path string) {
 	e.restoreTab(len(e.openFiles) - 1)
 	e.msg("opened " + filepath.Base(path))
 	e.refreshGit()
+	return true
 }
 
 func (e *Editor) saveFile(path string) {
